@@ -7,8 +7,8 @@ on:  # yamllint disable-line rule:truthy
     paths:
       - 'collections/**/argument_specs.yaml'
       - 'collections/**/controller.yml'
-      - 'collections/**/defaults/main.yml'
-      - 'collections/**/defaults/main.yaml'
+
+permissions: {}
 
 jobs:
   dispatch:

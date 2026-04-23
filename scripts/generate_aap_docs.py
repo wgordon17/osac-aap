@@ -65,7 +65,7 @@ def replace_marker(content: str, key: str, replacement: str) -> str:
 
 
 def load_yaml_safe(path: Path):
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -145,7 +145,7 @@ def generate_aap_templates_content(data: dict) -> dict:
 # Ansible role reference
 # ---------------------------------------------------------------------------
 
-def _param_table(options: dict, indent: int = 0) -> str:
+def _param_table(options: dict) -> str:
     if not options:
         return "_No parameters._\n"
     rows = ["| Parameter | Type | Required | Default | Description |",
@@ -216,7 +216,7 @@ def update_file(path: Path, markers: dict, check: bool) -> bool:
     Inject content into marker regions.
     Returns True if the file was or would be changed.
     """
-    original = path.read_text()
+    original = path.read_text(encoding="utf-8")
     updated = original
     for key, content in markers.items():
         updated = replace_marker(updated, key, content)
@@ -224,7 +224,7 @@ def update_file(path: Path, markers: dict, check: bool) -> bool:
     changed = updated != original
     if not check:
         if changed:
-            path.write_text(updated)
+            path.write_text(updated, encoding="utf-8")
     return changed
 
 
