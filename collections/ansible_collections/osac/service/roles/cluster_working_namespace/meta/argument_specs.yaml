@@ -1,0 +1,18 @@
+argument_specs:
+  main:
+    options:
+      cluster_working_namespace:
+        type: str
+        description: >
+          Pre-resolved working namespace for the cluster. If already set the
+          lookup step is skipped; the role sets this fact when not provided.
+      cluster_order_label:
+        type: str
+        required: true
+        description: Label key used to identify the cluster's working namespace.
+      cluster_working_namespace_cluster_order_name:
+        type: str
+        required: true
+        description: >
+          Value of the cluster-order label to filter Namespaces against.
+          Typically the ClusterOrder name.

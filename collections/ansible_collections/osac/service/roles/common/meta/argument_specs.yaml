@@ -1,0 +1,9 @@
+argument_specs:
+  get_remote_cluster_kubeconfig:
+    options:
+      remote_cluster_kubeconfig:
+        type: str
+        description: >
+          Path or content of the remote cluster kubeconfig. The role sets this
+          fact from the OSAC_REMOTE_CLUSTER_KUBECONFIG environment variable when
+          the variable is not already defined.

@@ -1,0 +1,15 @@
+argument_specs:
+  main:
+    options:
+      compute_instance:
+        type: dict
+        required: true
+        description: >
+          ComputeInstance resource dict. The role reads
+          status.tenantReference.name and status.tenantReference.namespace
+          to locate the working namespace.
+      compute_instance_working_namespace:
+        type: str
+        description: >
+          Pre-resolved working namespace for the compute instance. If already
+          set the lookup step is skipped; the role sets this fact when not provided.

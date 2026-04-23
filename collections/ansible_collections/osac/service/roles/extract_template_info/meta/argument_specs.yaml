@@ -1,0 +1,26 @@
+argument_specs:
+  main:
+    options:
+      cluster_order:
+        type: dict
+        required: true
+        description: >
+          ClusterOrder resource dict. The role extracts spec.templateID,
+          spec.templateParameters, and spec.nodeRequests from this object.
+      template_id:
+        type: str
+        description: >
+          Resolved template identifier (e.g. osac.templates.ocp_4_17_small).
+          If already set the extraction step is skipped; the role sets this fact
+          when not provided.
+      template_parameters:
+        type: dict
+        description: >
+          Parsed template parameters dict. If already set the extraction step is
+          skipped; the role sets this fact when not provided.
+      node_requests:
+        type: list
+        elements: dict
+        description: >
+          Node requests list. If already set the extraction step is skipped;
+          the role sets this fact when not provided.

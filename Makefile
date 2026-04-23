@@ -1,7 +1,7 @@
 # Integration tests for osac.workflows collection
 # Note: Must be run from repository root directory
 
-.PHONY: test lint
+.PHONY: test lint docs-generate docs-verify
 
 test:
 	@echo "=== Setting up test environment ==="
@@ -15,3 +15,9 @@ test:
 
 lint:
 	uv run ansible-lint
+
+docs-generate:
+	bash hack/update-docs.sh
+
+docs-verify:
+	bash hack/verify-docs.sh

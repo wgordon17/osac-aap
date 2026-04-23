@@ -1,3 +1,5 @@
+exclude: 'vendor/.*'
+
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v5.0.0
@@ -19,3 +21,13 @@ repos:
       types: [file, yaml]
       entry: yamllint --strict
 exclude: '(vendor|charts)/.*'
+
+- repo: local
+  hooks:
+    - id: docs-verify
+      name: Verify AAP docs are up to date
+      entry: make docs-verify
+      language: system
+      pass_filenames: false
+      stages: [pre-push]
+      files: '(controller\.yml|argument_specs\.yaml|defaults/main\.(yml|yaml))$'

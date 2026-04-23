@@ -1,74 +1,82 @@
 ---
 argument_specs:
-  create_subnet:
-    options:
-      subnet:
-        type: dict
-        required: true
-        description: Subnet CR from fulfillment-api via EDA payload
-      subnet_name:
-        type: str
-        required: true
-        description: Name of the Subnet resource
-      template_parameters:
-        type: dict
-        description: Template-specific parameters (reserved for future use)
-        options: {}
-        default: {}
-
-  delete_subnet:
-    options:
-      subnet:
-        type: dict
-        required: true
-        description: Subnet CR from fulfillment-api via EDA payload
-      subnet_name:
-        type: str
-        required: true
-        description: Name of the Subnet resource
-
   create_virtual_network:
     options:
       virtual_network:
         type: dict
         required: true
-        description: VirtualNetwork CR from fulfillment-api via EDA payload
+        description: VirtualNetwork CR from the fulfillment operator.
       virtual_network_name:
         type: str
         required: true
-        description: Name of the VirtualNetwork resource
-      template_parameters:
+        description: Name of the VirtualNetwork resource.
+      default_subnet_labels:
         type: dict
-        description: Template-specific parameters (reserved for future use)
-        options: {}
-        default: {}
+        description: Default labels applied to Subnet-created namespaces.
+        default:
+          osac.io/managed-by: osac-fulfillment
+      default_layer2_role:
+        type: str
+        description: Layer2 topology role for ClusterUserDefinedNetwork.
+        default: Primary
+      default_ipam_lifecycle:
+        type: str
+        description: IPAM lifecycle setting for ClusterUserDefinedNetwork.
+        default: Persistent
 
   delete_virtual_network:
     options:
       virtual_network:
         type: dict
         required: true
-        description: VirtualNetwork CR from fulfillment-api via EDA payload
+        description: VirtualNetwork CR from the fulfillment operator.
       virtual_network_name:
         type: str
         required: true
-        description: Name of the VirtualNetwork resource
+        description: Name of the VirtualNetwork resource.
+
+  create_subnet:
+    options:
+      subnet:
+        type: dict
+        required: true
+        description: Subnet CR from the fulfillment operator.
+      subnet_name:
+        type: str
+        required: true
+        description: Name of the Subnet resource.
+      default_subnet_labels:
+        type: dict
+        description: Default labels applied to the created namespace.
+        default:
+          osac.io/managed-by: osac-fulfillment
+
+  delete_subnet:
+    options:
+      subnet:
+        type: dict
+        required: true
+        description: Subnet CR from the fulfillment operator.
+      subnet_name:
+        type: str
+        required: true
+        description: Name of the Subnet resource.
 
   create_security_group:
     options:
       security_group:
         type: dict
         required: true
-        description: SecurityGroup CR from fulfillment-api via EDA payload
-      template_parameters:
+        description: SecurityGroup CR from the fulfillment operator.
+      default_security_group_labels:
         type: dict
-        description: Template-specific parameters (reserved for future use)
-        options: {}
-        default: {}
+        description: Default labels applied to created NetworkPolicy resources.
+        default:
+          osac.io/managed-by: osac-fulfillment
 
   delete_security_group:
     options:
       security_group:
         type: dict
         required: true
-        description: SecurityGroup CR from fulfillment-api via EDA payload
+        description: SecurityGroup CR from the fulfillment operator.

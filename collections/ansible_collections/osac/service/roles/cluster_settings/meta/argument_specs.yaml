@@ -1,0 +1,23 @@
+argument_specs:
+  main:
+    options:
+      cluster_order:
+        type: dict
+        required: true
+        description: >
+          ClusterOrder resource dict. The role reads spec.templateParameters
+          and spec.nodeRequests from this object and may update them with defaults.
+      cluster_settings_default_credentials_secret_name:
+        type: str
+        description: Name of the Secret containing default pull-secret and ssh-key.
+        default: "default-cluster-credentials"
+      cluster_settings_default_credentials_secret_namespace:
+        type: str
+        description: Namespace of the default credentials Secret.
+        default: "fulfillment-aap"
+      cluster_settings_template_defaults:
+        type: dict
+        description: >
+          Baseline template parameter defaults. Merged with user-provided
+          templateParameters; user values take precedence.
+        default: {}

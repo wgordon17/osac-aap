@@ -1,0 +1,28 @@
+argument_specs:
+  main:
+    options:
+      aap_prefix:
+        type: str
+        required: true
+        description: >
+          Prefix applied to all AAP resource names (projects, templates,
+          inventories, instance groups, schedules). Typically the deployment
+          environment identifier.
+      aap_organization_name:
+        type: str
+        required: true
+        description: Name of the AAP organization to configure resources in.
+      aap_project_name:
+        type: str
+        required: true
+        description: Human-readable project name used in descriptions.
+      aap_ee_image:
+        type: str
+        required: true
+        description: >
+          Container image reference for the AAP execution environment.
+      osac_publish_templates_enabled:
+        type: bool
+        required: false
+        description: >
+          Whether the publish-templates periodic schedule is enabled.

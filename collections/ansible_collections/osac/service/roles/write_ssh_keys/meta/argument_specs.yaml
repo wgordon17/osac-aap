@@ -1,0 +1,16 @@
+argument_specs:
+  main:
+    options:
+      server_ssh_key:
+        type: str
+        required: true
+        description: >
+          Destination path for the server SSH private key. The parent directory
+          is created automatically with mode 0700. Key content is read from the
+          SERVER_SSH_KEY environment variable (base64-encoded).
+      server_ssh_bastion_key:
+        type: str
+        required: true
+        description: >
+          Destination path for the bastion SSH private key. Key content is read
+          from the SERVER_SSH_BASTION_KEY environment variable (base64-encoded).

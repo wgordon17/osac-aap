@@ -1,0 +1,31 @@
+---
+name: Dispatch docs rebuild
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches: [main]
+    paths:
+      - 'collections/**/argument_specs.yaml'
+      - 'collections/**/controller.yml'
+      - 'collections/**/defaults/main.yml'
+      - 'collections/**/defaults/main.yaml'
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger docs site rebuild
+        id: dispatch
+        continue-on-error: true
+        run: |
+          gh api repos/osac-project/docs/dispatches \
+            --method POST \
+            -f event_type=docs-update \
+            -f "client_payload[repo]=osac-aap"
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_PAT }}
+
+      - name: Warn on dispatch failure
+        if: steps.dispatch.outcome == 'failure'
+        run: |
+          echo "::warning::Docs dispatch failed — PAT may be expired or missing. See Task 13 Step 2."
