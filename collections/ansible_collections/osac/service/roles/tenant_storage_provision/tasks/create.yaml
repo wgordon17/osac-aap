@@ -1,0 +1,90 @@
+---
+# Create tenant-specific StorageClasses by cloning a reference StorageClass
+# with osac.openshift.io/tenant and osac.openshift.io/storage-tier labels.
+# The Tenant controller discovers labeled StorageClasses and uses them
+# for tenant workload provisioning (VMs, clusters).
+#
+# Creates one StorageClass per tier in tenant_storage_provision_tiers.
+
+- name: Resolve reference StorageClass name
+  when: tenant_storage_provision_reference_sc | default('') | length == 0
+  block:
+    - name: Find cluster default StorageClass
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        kubeconfig: "{{ kubeconfig | default(omit) }}"
+      register: _tsp_all_sc
+
+    - name: Select default StorageClass
+      ansible.builtin.set_fact:
+        _tsp_reference_sc_name: "{{ item.metadata.name }}"
+      loop: "{{ _tsp_all_sc.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+      when:
+        - item.metadata.annotations is defined
+        - item.metadata.annotations['storageclass.kubernetes.io/is-default-class'] | default('') == 'true'
+
+    - name: Fail if no default StorageClass found
+      ansible.builtin.fail:
+        msg: >-
+          No default StorageClass found on the cluster and
+          tenant_storage_provision_reference_sc is not set.
+      when: _tsp_reference_sc_name is not defined or _tsp_reference_sc_name | length == 0
+
+- name: Use configured reference StorageClass
+  ansible.builtin.set_fact:
+    _tsp_reference_sc_name: "{{ tenant_storage_provision_reference_sc }}"
+  when: tenant_storage_provision_reference_sc | default('') | length > 0
+
+- name: Fetch reference StorageClass
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ _tsp_reference_sc_name }}"
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+  register: _tsp_ref_sc_result
+
+- name: Fail if reference StorageClass not found
+  ansible.builtin.fail:
+    msg: "Reference StorageClass '{{ _tsp_reference_sc_name }}' not found."
+  when: _tsp_ref_sc_result.resources | length != 1
+
+- name: Set reference StorageClass facts
+  ansible.builtin.set_fact:
+    _tsp_ref_sc: "{{ _tsp_ref_sc_result.resources[0] }}"
+
+- name: Create tenant-specific StorageClass per tier
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
+        labels:
+          osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
+          osac.openshift.io/storage-tier: "{{ item.name }}"
+      provisioner: "{{ item.provisioner | default(_tsp_ref_sc.provisioner) }}"
+      parameters: "{{ item.parameters | default(_tsp_ref_sc.parameters | default({})) }}"
+      reclaimPolicy: "{{ item.reclaim_policy | default(_tsp_ref_sc.reclaimPolicy | default('Delete')) }}"
+      volumeBindingMode: "{{ item.volume_binding_mode | default(_tsp_ref_sc.volumeBindingMode | default('Immediate')) }}"
+      allowVolumeExpansion: "{{ item.allow_volume_expansion | default(_tsp_ref_sc.allowVolumeExpansion | default(false)) }}"
+      mountOptions: "{{ item.mount_options | default(_tsp_ref_sc.mountOptions | default(omit)) }}"
+  loop: "{{ tenant_storage_provision_tiers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _tsp_create_results
+
+- name: Report results
+  ansible.builtin.debug:
+    msg: >-
+      Created {{ _tsp_create_results.results | selectattr('changed', 'equalto', true) | list | length }}
+      StorageClass(es) for tenant '{{ tenant_storage_provision_tenant_name }}'
+      (tiers: {{ tenant_storage_provision_tiers | map(attribute='name') | join(', ') }},
+      reference: {{ _tsp_reference_sc_name }}).
+
+- name: Configure storage backend for tenant
+  ansible.builtin.include_tasks: configure_backend.yaml

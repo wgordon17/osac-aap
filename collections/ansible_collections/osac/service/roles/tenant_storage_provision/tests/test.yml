@@ -1,0 +1,170 @@
+---
+# Test playbook for osac.service.tenant_storage_provision role.
+# Requires a cluster with at least one StorageClass (default SC preferred).
+#
+# Run from osac-aap repo root:
+#
+#   # Run all tests (create, verify, idempotency, multi-tier, delete):
+#   ansible-playbook collections/ansible_collections/osac/service/roles/tenant_storage_provision/tests/test.yml
+#
+#   # Use a specific reference StorageClass:
+#   ansible-playbook ...test.yml -e test_reference_sc=nfs-vm-dynamic
+
+- name: Test tenant_storage_provision role
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    test_tenant_name: osac-tsp-test
+    test_reference_sc: ""
+
+  tasks:
+    # --- Cleanup: remove any leftover SCs from previous runs ---
+    - name: "Setup: Clean slate"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: delete
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+
+    # --- Test 1: Create single-tier (default) ---
+    - name: "Test 1: Create single-tier StorageClass"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: create
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+        tenant_storage_provision_reference_sc: "{{ test_reference_sc }}"
+
+    - name: "Test 1: Verify StorageClass exists"
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ test_tenant_name }}-default"
+      register: _test1_sc
+
+    - name: "Test 1: Assert StorageClass has correct labels"
+      vars:
+        _sc_labels: "{{ _test1_sc.resources[0].metadata.labels }}"
+      ansible.builtin.assert:
+        that:
+          - _test1_sc.resources | length == 1
+          - _sc_labels['osac.openshift.io/tenant'] == test_tenant_name
+          - _sc_labels['osac.openshift.io/storage-tier'] == 'default'
+        fail_msg: "StorageClass missing or has wrong labels"
+        success_msg: "Test 1 passed: single-tier SC created with correct labels"
+
+    # --- Test 2: Idempotency ---
+    - name: "Test 2: Re-run create (idempotency check)"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: create
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+        tenant_storage_provision_reference_sc: "{{ test_reference_sc }}"
+
+    - name: "Test 2: Verify still exactly one SC"
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        label_selectors:
+          - "osac.openshift.io/tenant={{ test_tenant_name }}"
+      register: _test2_sc
+
+    - name: "Test 2: Assert idempotent"
+      ansible.builtin.assert:
+        that:
+          - _test2_sc.resources | length == 1
+        fail_msg: "Idempotency failed: expected 1 SC, got {{ _test2_sc.resources | length }}"
+        success_msg: "Test 2 passed: idempotent re-run"
+
+    # --- Test 3: Delete ---
+    - name: "Test 3: Delete tenant StorageClasses"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: delete
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+
+    - name: "Test 3: Verify no SCs remain"
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        label_selectors:
+          - "osac.openshift.io/tenant={{ test_tenant_name }}"
+      register: _test3_sc
+
+    - name: "Test 3: Assert all deleted"
+      ansible.builtin.assert:
+        that:
+          - _test3_sc.resources | length == 0
+        fail_msg: "Delete failed: {{ _test3_sc.resources | length }} SC(s) remain"
+        success_msg: "Test 3 passed: all tenant SCs deleted"
+
+    # --- Test 4: Multi-tier ---
+    - name: "Test 4: Create multi-tier StorageClasses"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: create
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+        tenant_storage_provision_reference_sc: "{{ test_reference_sc }}"
+        tenant_storage_provision_tiers:
+          - name: fast
+          - name: standard
+          - name: archive
+
+    - name: "Test 4: Verify three SCs created"
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        label_selectors:
+          - "osac.openshift.io/tenant={{ test_tenant_name }}"
+      register: _test4_sc
+
+    - name: "Test 4: Extract tier labels"
+      ansible.builtin.set_fact:
+        _test4_tiers: "{{ _test4_sc.resources | map(attribute='metadata.labels') | map('dict2items') | map('selectattr', 'key', 'equalto', 'osac.openshift.io/storage-tier') | map('map', attribute='value') | map('first') | sort | list }}"
+
+    - name: "Test 4: Assert correct tier labels"
+      ansible.builtin.assert:
+        that:
+          - _test4_sc.resources | length == 3
+          - _test4_tiers == ['archive', 'fast', 'standard']
+        fail_msg: "Multi-tier failed: expected tiers [archive, fast, standard], got {{ _test4_tiers }}"
+        success_msg: "Test 4 passed: multi-tier SCs created — {{ _test4_sc.resources | map(attribute='metadata.name') | join(', ') }}"
+
+    # --- Test 5: Delete multi-tier ---
+    - name: "Test 5: Delete all multi-tier SCs"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: delete
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}"
+
+    - name: "Test 5: Verify all deleted"
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        label_selectors:
+          - "osac.openshift.io/tenant={{ test_tenant_name }}"
+      register: _test5_sc
+
+    - name: "Test 5: Assert clean"
+      ansible.builtin.assert:
+        that:
+          - _test5_sc.resources | length == 0
+        fail_msg: "Multi-tier delete failed: {{ _test5_sc.resources | length }} SC(s) remain"
+        success_msg: "Test 5 passed: multi-tier cleanup complete"
+
+    # --- Test 6: Delete on empty (no SCs) ---
+    - name: "Test 6: Delete when no SCs exist (should not fail)"
+      ansible.builtin.include_role:
+        name: osac.service.tenant_storage_provision
+        tasks_from: delete
+      vars:
+        tenant_storage_provision_tenant_name: "{{ test_tenant_name }}-nonexistent"
+
+    - name: "Test 6: Assert no error"
+      ansible.builtin.debug:
+        msg: "Test 6 passed: delete on empty tenant succeeded without error"

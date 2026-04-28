@@ -1,0 +1,14 @@
+---
+# CSP extension point: configure the storage backend for a tenant.
+#
+# This file is intentionally empty. CSPs override it to add backend-specific
+# configuration such as creating a tenant project on VAST, configuring QoS
+# or encryption on NetApp, setting quotas on Ceph, etc.
+#
+# Available variables when this runs:
+#   tenant_storage_provision_tenant_name  — the tenant name
+#   _tsp_ref_sc                          — the reference StorageClass object
+#   _tsp_reference_sc_name               — the reference SC name
+#
+# To override: create a file at the same path in a CSP-specific Ansible
+# collection or project and ensure it takes precedence in the role search path.

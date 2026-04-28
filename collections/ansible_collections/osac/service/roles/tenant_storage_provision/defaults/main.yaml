@@ -1,0 +1,10 @@
+---
+# Reference StorageClass to clone for the tenant. When empty, the cluster's
+# default StorageClass is used.
+tenant_storage_provision_reference_sc: ""
+
+# Storage tiers to provision. Each entry creates one StorageClass.
+# Per-tier overrides (provisioner, parameters, etc.) take precedence over
+# the reference SC values.
+tenant_storage_provision_tiers:
+  - name: default

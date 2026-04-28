@@ -1,0 +1,47 @@
+argument_specs:
+  create:
+    options:
+      tenant_storage_provision_tenant_name:
+        type: str
+        required: true
+        description: >-
+          Tenant name. Used as the value for the osac.openshift.io/tenant label
+          on created StorageClasses and as a prefix for SC names.
+      tenant_storage_provision_reference_sc:
+        type: str
+        required: false
+        description: >-
+          Name of an existing StorageClass to use as a template (provisioner,
+          parameters, reclaim policy, etc.). When empty, the cluster's default
+          StorageClass is used. Per-tier overrides in
+          tenant_storage_provision_tiers take precedence.
+      tenant_storage_provision_tiers:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          List of storage tiers to provision. Each entry creates one
+          StorageClass named <tenant>-<tier>. Defaults to [{name: default}].
+          Each entry may override provisioner, parameters, reclaim_policy,
+          volume_binding_mode, allow_volume_expansion, and mount_options from
+          the reference SC.
+      kubeconfig:
+        type: str
+        required: false
+        description: >-
+          Kubeconfig content or path for the target cluster where
+          StorageClasses are managed. When not set, the current context is used.
+  delete:
+    options:
+      tenant_storage_provision_tenant_name:
+        type: str
+        required: true
+        description: >-
+          Tenant name. All StorageClasses labeled with
+          osac.openshift.io/tenant=<name> will be removed.
+      kubeconfig:
+        type: str
+        required: false
+        description: >-
+          Kubeconfig content or path for the target cluster where
+          StorageClasses are managed. When not set, the current context is used.
