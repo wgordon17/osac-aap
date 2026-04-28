@@ -95,11 +95,11 @@ controller_templates: # noqa: var-naming[no-role-prefix]
     allow_simultaneous: true
     ask_variables_on_launch: true
     verbosity: 0
-  - name: "{{ aap_prefix }}-create-tenant"
+  - name: "{{ aap_prefix }}-create-org"
     project: "{{ aap_prefix }}"
     organization: "{{ aap_organization_name }}"
     job_type: run
-    playbook: "playbook_osac_create_tenant_storage.yml"
+    playbook: "playbook_osac_create_org_storage.yml"
     inventory: "{{ aap_prefix }}-tenant-operations"
     execution_environment: "{{ aap_prefix }}-ee"
     instance_groups:
@@ -107,11 +107,11 @@ controller_templates: # noqa: var-naming[no-role-prefix]
     allow_simultaneous: true
     ask_variables_on_launch: true
     verbosity: 0
-  - name: "{{ aap_prefix }}-delete-tenant"
+  - name: "{{ aap_prefix }}-delete-org"
     project: "{{ aap_prefix }}"
     organization: "{{ aap_organization_name }}"
     job_type: run
-    playbook: "playbook_osac_delete_tenant_storage.yml"
+    playbook: "playbook_osac_delete_org_storage.yml"
     inventory: "{{ aap_prefix }}-tenant-operations"
     execution_environment: "{{ aap_prefix }}-ee"
     instance_groups:

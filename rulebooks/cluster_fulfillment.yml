@@ -105,16 +105,16 @@
           name: "{{ job_template_prefix }}-delete-public-ip-pool"
           organization: "{{ job_template_organization }}"
 
-    - name: Create tenant storage
-      condition: event.meta.endpoint == "create-tenant"
+    - name: Create org storage
+      condition: event.meta.endpoint == "create-org"
       action:
         run_job_template:
-          name: "{{ job_template_prefix }}-create-tenant"
+          name: "{{ job_template_prefix }}-create-org"
           organization: "{{ job_template_organization }}"
 
-    - name: Delete tenant storage
-      condition: event.meta.endpoint == "delete-tenant"
+    - name: Delete org storage
+      condition: event.meta.endpoint == "delete-org"
       action:
         run_job_template:
-          name: "{{ job_template_prefix }}-delete-tenant"
+          name: "{{ job_template_prefix }}-delete-org"
           organization: "{{ job_template_organization }}"

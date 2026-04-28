@@ -5,10 +5,22 @@
 # configuration such as creating a tenant project on VAST, configuring QoS
 # or encryption on NetApp, setting quotas on Ceph, etc.
 #
+# This runs AFTER all tenant StorageClasses have been created.
+#
 # Available variables when this runs:
 #   tenant_storage_provision_tenant_name  — the tenant name
+#   tenant_storage_provision_tiers        — the tier list used to create SCs
 #   _tsp_ref_sc                          — the reference StorageClass object
 #   _tsp_reference_sc_name               — the reference SC name
+#   _tsp_create_results                  — results of the SC creation loop
+#
+# The Tenant CR is available via ansible_eda.event.payload (both AAP Direct
+# and EDA providers use this path for backward compatibility).
+#
+# For multi-backend deployments (e.g., VAST for fast tier, Ceph for standard),
+# iterate over tenant_storage_provision_tiers and branch on item.provisioner.
+#
+# Reverse cleanup belongs in cleanup_backend.yaml (called during delete).
 #
 # To override: create a file at the same path in a CSP-specific Ansible
 # collection or project and ensure it takes precedence in the role search path.

@@ -10,6 +10,9 @@
     kubeconfig: "{{ kubeconfig | default(omit) }}"
   register: _tsp_tenant_scs
 
+- name: Clean up storage backend for tenant
+  ansible.builtin.include_tasks: cleanup_backend.yaml
+
 - name: Delete tenant StorageClasses
   kubernetes.core.k8s:
     state: absent
