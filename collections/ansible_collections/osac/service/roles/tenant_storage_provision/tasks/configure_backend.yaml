@@ -3,19 +3,33 @@
 #
 # This file is intentionally empty. CSPs override it to add backend-specific
 # configuration such as creating a tenant project on VAST, configuring QoS
-# or encryption on NetApp, setting quotas on Ceph, etc.
+# or encryption on NetApp, setting quotas on Ceph, installing or configuring
+# a per-tenant CSI driver, etc.
 #
-# This runs AFTER all tenant StorageClasses have been created.
+# This runs BEFORE StorageClasses are created, so the hook can provision
+# backend resources that the SCs will reference (credentials secrets, storage
+# pools, VIP pools, etc.).
 #
 # Available variables when this runs:
 #   tenant_storage_provision_tenant_name  — the tenant name
-#   tenant_storage_provision_tiers        — the tier list used to create SCs
+#   tenant_storage_provision_tiers        — the tier list (can be modified via set_fact)
 #   _tsp_ref_sc                          — the reference StorageClass object
 #   _tsp_reference_sc_name               — the reference SC name
-#   _tsp_create_results                  — results of the SC creation loop
 #
 # The Tenant CR is available via ansible_eda.event.payload (both AAP Direct
 # and EDA providers use this path for backward compatibility).
+#
+# To dynamically set SC parameters (e.g., after creating a VAST VIP pool),
+# use set_fact to update tenant_storage_provision_tiers before returning:
+#
+#   - name: Update tier parameters with VAST config
+#     ansible.builtin.set_fact:
+#       tenant_storage_provision_tiers:
+#         - name: default
+#           provisioner: csi.vastdata.com
+#           parameters:
+#             vipPool: "{{ created_pool_name }}"
+#             csi.storage.k8s.io/provisioner-secret-name: "vast-{{ tenant_storage_provision_tenant_name }}"
 #
 # For multi-backend deployments (e.g., VAST for fast tier, Ceph for standard),
 # iterate over tenant_storage_provision_tiers and branch on item.provisioner.

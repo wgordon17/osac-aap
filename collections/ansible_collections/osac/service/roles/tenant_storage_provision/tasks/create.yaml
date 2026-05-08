@@ -55,6 +55,9 @@
   ansible.builtin.set_fact:
     _tsp_ref_sc: "{{ _tsp_ref_sc_result.resources[0] }}"
 
+- name: Configure storage backend for tenant
+  ansible.builtin.include_tasks: configure_backend.yaml
+
 - name: Create tenant-specific StorageClass per tier
   kubernetes.core.k8s:
     state: present
@@ -85,6 +88,3 @@
       StorageClass(es) for tenant '{{ tenant_storage_provision_tenant_name }}'
       (tiers: {{ tenant_storage_provision_tiers | map(attribute='name') | join(', ') }},
       reference: {{ _tsp_reference_sc_name }}).
-
-- name: Configure storage backend for tenant
-  ansible.builtin.include_tasks: configure_backend.yaml

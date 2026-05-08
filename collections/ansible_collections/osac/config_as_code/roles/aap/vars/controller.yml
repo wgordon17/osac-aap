@@ -806,4 +806,3 @@ controller_instance_groups: # noqa: var-naming[no-role-prefix]
           - name: cas
             configMap:
               name: ca-bundle
->>>>>>> 02f5b8c (MGMT-23826: Add tenant storage provisioning role and playbooks)
