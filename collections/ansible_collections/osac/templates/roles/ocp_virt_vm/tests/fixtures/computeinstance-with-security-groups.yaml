@@ -1,0 +1,13 @@
+---
+apiVersion: osac.openshift.io/v1alpha1
+kind: ComputeInstance
+metadata:
+  name: test-vm-sgs
+  namespace: osac-system
+spec:
+  templateID: osac.templates.ocp_virt_vm
+  securityGroups:
+    - web-sg
+    - db-sg
+status:
+  desiredConfigVersion: "1"

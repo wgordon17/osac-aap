@@ -19,6 +19,7 @@
     vm_ssh_key: "{{ compute_instance.spec.sshKey | default('') }}"
     vm_user_data_secret_ref: "{{ (compute_instance.spec.userDataSecretRef | default({})).name | default('') }}"
     vm_additional_disks: "{{ compute_instance.spec.additionalDisks | default([]) }}"
+    vm_security_groups: "{{ compute_instance.spec.securityGroups | default([]) }}"
 
 - name: Require explicit Windows container disk (no vendor default image)
   ansible.builtin.assert:
@@ -71,3 +72,16 @@
   loop: "{{ params.exposed_ports.split(',') }}"
   loop_control:
     label: "{{ item.split('/')[0] }}"
+
+- name: Initialize security group labels accumulator
+  ansible.builtin.set_fact:
+    vm_sg_labels: {}
+
+- name: Build per-SG pod labels for VM
+  ansible.builtin.set_fact:
+    vm_sg_labels: "{{ vm_sg_labels | combine({'osac.openshift.io/securitygroup-' ~ item: ''}) }}"
+  loop: "{{ vm_security_groups }}"
+
+- name: Override default VM labels to include per-SG labels
+  ansible.builtin.set_fact:
+    default_vm_labels: "{{ default_vm_labels | combine(vm_sg_labels) }}"
