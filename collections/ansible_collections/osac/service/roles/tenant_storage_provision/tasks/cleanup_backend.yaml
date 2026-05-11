@@ -1,17 +1,20 @@
 ---
 # CSP extension point: clean up the storage backend for a tenant.
 #
-# This file is intentionally empty. CSPs override it to remove
-# backend-specific resources such as deleting a tenant project on VAST,
-# removing quotas on Ceph, revoking API tokens, etc.
-#
-# This runs BEFORE StorageClasses are removed (in tasks/delete.yaml),
-# so backend resources that depend on the SC still existing can be
-# cleaned up safely.
+# This runs BEFORE StorageClasses are removed (in tasks/delete.yaml).
+# The VAST provider deletes VAST VMS resources (View, VIP Pool, Tenant),
+# CSI Secret, VolumeSnapshotClass, and tenant config Secret.
 #
 # Available variables when this runs:
 #   tenant_storage_provision_tenant_name  — the tenant name
 #   _tsp_tenant_scs                      — list of tenant StorageClass objects about to be deleted
-#
-# To override: create a file at the same path in a CSP-specific Ansible
-# collection or project and ensure it takes precedence in the role search path.
+#   kubeconfig                            — optional remote cluster kubeconfig
+- name: Check storage provider type
+  ansible.builtin.set_fact:
+    _tsp_storage_provider_type: "{{ lookup('env', 'STORAGE_PROVIDER_TYPE') | default('', true) }}"
+
+- name: Clean up VAST storage backend
+  when: _tsp_storage_provider_type == 'vast'
+  ansible.builtin.include_role:
+    name: osac.templates.vast_storage
+    tasks_from: cleanup_backend
