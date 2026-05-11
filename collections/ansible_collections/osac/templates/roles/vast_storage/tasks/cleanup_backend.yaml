@@ -60,6 +60,16 @@
 - name: Resolve VAST credentials for VAST-side cleanup
   ansible.builtin.include_tasks: read_credentials.yaml
 
+- name: Build VMS connection dict
+  ansible.builtin.set_fact:
+    _vast_vms_conn:
+      host: "{{ vast_endpoint }}"
+      username: "{{ vast_username }}"
+      password: "{{ vast_password }}"
+      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
+      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+  no_log: true
+
 - name: Delete K8s VolumeSnapshotClass
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig | default(omit) }}"
@@ -90,12 +100,7 @@
 
 - name: Delete VAST view
   vastdata.vms.views:
-    vms:
-      host: "{{ vast_endpoint }}"
-      username: "{{ vast_username }}"
-      password: "{{ vast_password }}"
-      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+    vms: "{{ _vast_vms_conn }}"
     name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_teardown_tier }}"
     state: absent
   failed_when: false
@@ -111,12 +116,7 @@
 # from the current vast_storage_qos_enabled default. Use failed_when to tolerate "not found".
 - name: Delete VAST view policy
   vastdata.vms.viewpolicies:
-    vms:
-      host: "{{ vast_endpoint }}"
-      username: "{{ vast_username }}"
-      password: "{{ vast_password }}"
-      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+    vms: "{{ _vast_vms_conn }}"
     name: "policy-{{ tenant_storage_provision_tenant_name }}"
     state: absent
   failed_when: >-
@@ -127,12 +127,7 @@
 
 - name: Delete VAST VIP pool
   vastdata.vms.vippools:
-    vms:
-      host: "{{ vast_endpoint }}"
-      username: "{{ vast_username }}"
-      password: "{{ vast_password }}"
-      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+    vms: "{{ _vast_vms_conn }}"
     name: "{{ vast_storage_teardown_vip_pool }}"
     state: absent
   failed_when: false
@@ -146,12 +141,7 @@
 
 - name: Delete VAST tenant
   vastdata.vms.tenants:
-    vms:
-      host: "{{ vast_endpoint }}"
-      username: "{{ vast_username }}"
-      password: "{{ vast_password }}"
-      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+    vms: "{{ _vast_vms_conn }}"
     name: "{{ tenant_storage_provision_tenant_name }}"
     state: absent
   failed_when: false
@@ -207,4 +197,5 @@
     vast_endpoint: ""
     vast_username: ""
     vast_password: ""
+    _vast_vms_conn: {}
   no_log: true

@@ -29,9 +29,6 @@
     vast_storage_csi_provisioner: >-
       {{ vast_storage_csi_provisioner_block if vast_storage_protocol == 'block'
          else vast_storage_csi_provisioner_nfs }}
-
-- name: Determine VolumeSnapshotClass provisioner based on storage protocol
-  ansible.builtin.set_fact:
     vast_storage_snapshot_provisioner: >-
       {{ vast_storage_csi_provisioner_block if vast_storage_protocol == 'block'
          else vast_storage_csi_provisioner_nfs }}
