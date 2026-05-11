@@ -181,125 +181,128 @@
         _vast_vms_conn: {}
       no_log: true
 
-- name: Set tenant config facts
-  ansible.builtin.set_fact:
-    vast_storage_tenant_id: "{{ vast_tenant_result.tenants.id | string }}"
-    vast_storage_vip_pool_name: "vippool-{{ tenant_storage_provision_tenant_name }}"
-    vast_storage_view_policy_name: "policy-{{ tenant_storage_provision_tenant_name if vast_storage_qos_enabled else 'default' }}"
-    vast_storage_path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}"
+- name: Persist tenant resources and configure StorageClass tier
+  block:
+    - name: Set tenant config facts
+      ansible.builtin.set_fact:
+        vast_storage_tenant_id: "{{ vast_tenant_result.tenants.id | string }}"
+        vast_storage_vip_pool_name: "vippool-{{ tenant_storage_provision_tenant_name }}"
+        vast_storage_view_policy_name: "policy-{{ tenant_storage_provision_tenant_name if vast_storage_qos_enabled else 'default' }}"
+        vast_storage_path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}"
 
-- name: Persist tenant config to K8s Secret on hub cluster
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: "{{ vast_storage_tenant_config_secret_prefix }}{{ tenant_storage_provision_tenant_name }}"
-        namespace: "{{ vast_storage_config_namespace }}"
-        labels:
-          app.kubernetes.io/managed-by: osac-aap
-          osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
-      type: Opaque
-      stringData:
-        vast_tenant_id: "{{ vast_storage_tenant_id }}"
-        vip_pool_name: "{{ vast_storage_vip_pool_name }}"
-        view_policy_name: "{{ vast_storage_view_policy_name }}"
-        storage_path: "{{ vast_storage_path }}"
-        storage_tier: "{{ vast_storage_tier }}"
-        storage_provider_type: "vast"
-        storage_protocol: "{{ vast_storage_protocol }}"
-  no_log: true
+    - name: Persist tenant config to K8s Secret on hub cluster
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ vast_storage_tenant_config_secret_prefix }}{{ tenant_storage_provision_tenant_name }}"
+            namespace: "{{ vast_storage_config_namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: osac-aap
+              osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
+          type: Opaque
+          stringData:
+            vast_tenant_id: "{{ vast_storage_tenant_id }}"
+            vip_pool_name: "{{ vast_storage_vip_pool_name }}"
+            view_policy_name: "{{ vast_storage_view_policy_name }}"
+            storage_path: "{{ vast_storage_path }}"
+            storage_tier: "{{ vast_storage_tier }}"
+            storage_provider_type: "vast"
+            storage_protocol: "{{ vast_storage_protocol }}"
+      no_log: true
 
-- name: Set CSI Secret resource name
-  ansible.builtin.set_fact:
-    vast_storage_csi_secret_name: "vast-csi-{{ tenant_storage_provision_tenant_name }}"
+    - name: Set CSI Secret resource name
+      ansible.builtin.set_fact:
+        vast_storage_csi_secret_name: "vast-csi-{{ tenant_storage_provision_tenant_name }}"
 
-- name: Create K8s CSI Secret for VAST CSI driver in tenant namespace
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig | default(omit) }}"
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: "{{ vast_storage_csi_secret_name }}"
-        namespace: "{{ tenant_namespace }}"
-        labels:
-          app.kubernetes.io/managed-by: osac-aap
-          osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
-      type: Opaque
-      stringData:
-        endpoint: "{{ vast_endpoint }}"
-        username: "{{ vast_username }}"
-        password: "{{ vast_password }}"
-  no_log: true
+    - name: Create K8s CSI Secret for VAST CSI driver in tenant namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig | default(omit) }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ vast_storage_csi_secret_name }}"
+            namespace: "{{ tenant_namespace }}"
+            labels:
+              app.kubernetes.io/managed-by: osac-aap
+              osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
+          type: Opaque
+          stringData:
+            endpoint: "{{ vast_endpoint }}"
+            username: "{{ vast_username }}"
+            password: "{{ vast_password }}"
+      no_log: true
 
-- name: Build VAST StorageClass parameters
-  ansible.builtin.set_fact:
-    _vast_sc_params:
-      vipPool: "{{ vast_storage_vip_pool_name }}"
-      storagePath: "{{ vast_storage_path }}"
-      viewPolicy: "{{ vast_storage_view_policy_name }}"
-      secretName: "{{ vast_storage_csi_secret_name }}"
-      secretNamespace: "{{ tenant_namespace }}"
+    - name: Build VAST StorageClass parameters
+      ansible.builtin.set_fact:
+        _vast_sc_params:
+          vipPool: "{{ vast_storage_vip_pool_name }}"
+          storagePath: "{{ vast_storage_path }}"
+          viewPolicy: "{{ vast_storage_view_policy_name }}"
+          secretName: "{{ vast_storage_csi_secret_name }}"
+          secretNamespace: "{{ tenant_namespace }}"
 
-- name: Add encryption parameter to StorageClass if enabled
-  when: vast_storage_encryption_enabled
-  ansible.builtin.set_fact:
-    _vast_sc_params: "{{ _vast_sc_params | combine({'encryption': 'true'}) }}"
+    - name: Add encryption parameter to StorageClass if enabled
+      when: vast_storage_encryption_enabled
+      ansible.builtin.set_fact:
+        _vast_sc_params: "{{ _vast_sc_params | combine({'encryption': 'true'}) }}"
 
-- name: Override tier configuration for VAST
-  ansible.builtin.set_fact:
-    tenant_storage_provision_tiers:
-      - name: "{{ vast_storage_tier | default('default') }}"
-        provisioner: "{{ vast_storage_csi_provisioner | trim }}"
-        parameters: "{{ _vast_sc_params }}"
-        volume_binding_mode: "{{ 'WaitForFirstConsumer' if vast_storage_protocol == 'block' else 'Immediate' }}"
+    - name: Override tier configuration for VAST
+      ansible.builtin.set_fact:
+        tenant_storage_provision_tiers:
+          - name: "{{ vast_storage_tier | default('default') }}"
+            provisioner: "{{ vast_storage_csi_provisioner | trim }}"
+            parameters: "{{ _vast_sc_params }}"
+            volume_binding_mode: "{{ 'WaitForFirstConsumer' if vast_storage_protocol == 'block' else 'Immediate' }}"
 
-- name: Check if VolumeSnapshot CRD is installed (required for VolumeSnapshotClass)
-  when: vast_storage_snapshots_enabled
-  kubernetes.core.k8s_info:
-    api_version: apiextensions.k8s.io/v1
-    kind: CustomResourceDefinition
-    name: volumesnapshotclasses.snapshot.storage.k8s.io
-    kubeconfig: "{{ kubeconfig | default(omit) }}"
-  register: vast_storage_vsc_crd_check
+    - name: Check if VolumeSnapshot CRD is installed (required for VolumeSnapshotClass)
+      when: vast_storage_snapshots_enabled
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: volumesnapshotclasses.snapshot.storage.k8s.io
+        kubeconfig: "{{ kubeconfig | default(omit) }}"
+      register: vast_storage_vsc_crd_check
 
-- name: Warn and skip VolumeSnapshotClass if CRD is not installed
-  when: >-
-    vast_storage_snapshots_enabled and
-    vast_storage_vsc_crd_check.resources | default([]) | length == 0
-  ansible.builtin.debug:
-    msg: >-
-      VolumeSnapshotClass creation skipped: VolumeSnapshot CRD
-      (volumesnapshotclasses.snapshot.storage.k8s.io) not installed on cluster.
-      Install the snapshot-controller to enable K8s-native snapshots.
+    - name: Warn and skip VolumeSnapshotClass if CRD is not installed
+      when: >-
+        vast_storage_snapshots_enabled and
+        vast_storage_vsc_crd_check.resources | default([]) | length == 0
+      ansible.builtin.debug:
+        msg: >-
+          VolumeSnapshotClass creation skipped: VolumeSnapshot CRD
+          (volumesnapshotclasses.snapshot.storage.k8s.io) not installed on cluster.
+          Install the snapshot-controller to enable K8s-native snapshots.
 
-- name: Create K8s VolumeSnapshotClass for tenant
-  when: >-
-    vast_storage_snapshots_enabled and
-    vast_storage_vsc_crd_check.resources | default([]) | length > 0
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig | default(omit) }}"
-    state: present
-    definition:
-      apiVersion: snapshot.storage.k8s.io/v1
-      kind: VolumeSnapshotClass
-      metadata:
-        name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}"
-        labels:
-          app.kubernetes.io/managed-by: osac-aap
-          osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
-      driver: "{{ vast_storage_snapshot_provisioner }}"
-      deletionPolicy: Delete
-      parameters:
-        secretName: "{{ vast_storage_csi_secret_name }}"
-        secretNamespace: "{{ tenant_namespace }}"
+    - name: Create K8s VolumeSnapshotClass for tenant
+      when: >-
+        vast_storage_snapshots_enabled and
+        vast_storage_vsc_crd_check.resources | default([]) | length > 0
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig | default(omit) }}"
+        state: present
+        definition:
+          apiVersion: snapshot.storage.k8s.io/v1
+          kind: VolumeSnapshotClass
+          metadata:
+            name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}"
+            labels:
+              app.kubernetes.io/managed-by: osac-aap
+              osac.openshift.io/tenant: "{{ tenant_storage_provision_tenant_name }}"
+          driver: "{{ vast_storage_snapshot_provisioner }}"
+          deletionPolicy: Delete
+          parameters:
+            secretName: "{{ vast_storage_csi_secret_name }}"
+            secretNamespace: "{{ tenant_namespace }}"
 
-- name: Clear VAST credentials from facts
-  ansible.builtin.set_fact:
-    vast_endpoint: ""
-    vast_username: ""
-    vast_password: ""
-  no_log: true
+  always:
+    - name: Clear VAST credentials from facts
+      ansible.builtin.set_fact:
+        vast_endpoint: ""
+        vast_username: ""
+        vast_password: ""
+      no_log: true
