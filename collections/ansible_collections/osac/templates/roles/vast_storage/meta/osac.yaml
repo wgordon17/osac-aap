@@ -1,0 +1,10 @@
+---
+title: VAST Data Storage Provider
+description: Provisions VAST storage backend resources and manages CSI driver lifecycle
+template_type: storage
+implementation_strategy: vast_storage
+capabilities:
+  supports_nfs: true
+  supports_block: true
+  supports_encryption: true
+  supports_snapshots: true

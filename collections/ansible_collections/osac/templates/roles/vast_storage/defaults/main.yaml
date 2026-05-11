@@ -1,0 +1,44 @@
+---
+# VAST-specific defaults — all use vast_storage_ prefix.
+# Env-var-driven defaults follow the OSAC domain pattern:
+#   OSAC_PUBLISH_TEMPLATES_NAMESPACE_DEFAULT, OSAC_COMPUTE_INSTANCE_OPERATIONS_NAMESPACE_DEFAULT
+
+# Storage protocol — set in storage-operations-ig ConfigMap via VAST_STORAGE_PROTOCOL.
+vast_storage_protocol: "{{ lookup('env', 'VAST_STORAGE_PROTOCOL') | default('nfs', true) }}"
+
+# CSI provisioner names (VAST CSI driver standard names)
+vast_storage_csi_provisioner_nfs: "csi.vastdata.com"
+vast_storage_csi_provisioner_block: "block.csi.vastdata.com"
+
+# QoS via viewpolicies — disabled by default for MVP
+vast_storage_qos_enabled: false
+
+# K8s Secret on hub cluster that stores per-tenant VAST config (tenant ID, VIP pool, view policy, path)
+vast_storage_tenant_config_secret_prefix: "vast-tenant-config-"
+
+# Namespace for hub-cluster config secrets — set via OSAC_STORAGE_CONFIG_NAMESPACE env var
+# in the tenant-operations-ig pod spec (downward API metadata.namespace).
+vast_storage_config_namespace: "{{ lookup('env', 'OSAC_STORAGE_CONFIG_NAMESPACE') | default('osac-system', true) }}"
+
+# K8s Secret name for VAST admin credentials used as JIT fallback
+# (when running in compute-instance-ig which lacks VAST env vars in envFrom)
+vast_storage_admin_secret_name: "vast-admin-credentials"
+
+# VolumeSnapshotClass provisioner — same as NFS provisioner for VAST
+vast_storage_snapshot_provisioner: "csi.vastdata.com"
+
+# TLS certificate validation for VAST VMS API calls.
+# Set to true in production; false allows self-signed certs in dev/test environments.
+vast_storage_validate_certs: true
+
+# API timeout (seconds) passed to the vastdata.vms modules via the vms: connection dict.
+# JIT runs inline — keep timeouts short to avoid blocking VM creation.
+vast_storage_api_timeout: 30
+
+# CSI Operator installation via OLM
+vast_storage_csi_operator_namespace: "openshift-operators"
+vast_storage_csi_operator_channel: "stable"
+# Automatic allows unattended upgrades; Manual requires human InstallPlan approval
+# which blocks automated provisioning in AAP workflows.
+vast_storage_csi_operator_approval: "Automatic"
+vast_storage_csi_driver_name: "vastcsi-driver"
