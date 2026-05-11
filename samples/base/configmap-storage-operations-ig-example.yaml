@@ -1,0 +1,15 @@
+---
+# Example ConfigMap for VAST storage configuration mounted into tenant-operations-ig pods.
+# Create in the same namespace as the tenant-operations instance group.
+# Credentials (VAST_ENDPOINT, VAST_USERNAME, VAST_PASSWORD) belong in the Secret (see secret-storage-operations-ig-example.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storage-operations-ig
+  namespace: osac-system  # replace with your tenant-operations namespace
+data:
+  STORAGE_PROVIDER_TYPE: "vast"
+  VAST_STORAGE_PROTOCOL: "nfs"
+  STORAGE_TIER: "default"
+  STORAGE_ENCRYPTION_ENABLED: "true"
+  STORAGE_SNAPSHOTS_ENABLED: "true"
