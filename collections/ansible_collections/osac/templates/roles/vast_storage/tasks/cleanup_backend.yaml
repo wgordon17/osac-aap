@@ -22,11 +22,18 @@
 - name: Set teardown facts from tenant config Secret
   when: vast_storage_teardown_config.resources | length > 0
   ansible.builtin.set_fact:
-    vast_storage_teardown_vip_pool: "{{ vast_storage_teardown_config.resources[0].data.vip_pool_name | b64decode }}"
-    vast_storage_teardown_tier: "{{ vast_storage_teardown_config.resources[0].data.storage_tier | b64decode }}"
+    vast_storage_teardown_vip_pool: >-
+      {{ vast_storage_teardown_config.resources[0].data['vip_pool_name'] | default('') | b64decode
+         | default('vippool-' ~ tenant_storage_provision_tenant_name, true) }}
+    vast_storage_teardown_tier: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_tier'] | default('') | b64decode
+         | default('default', true) }}
     vast_storage_teardown_protocol: >-
-      {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode | default(vast_storage_protocol, true) }}
-    vast_storage_teardown_provider_type: "{{ vast_storage_teardown_config.resources[0].data.storage_provider_type | b64decode }}"
+      {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode
+         | default(vast_storage_protocol, true) }}
+    vast_storage_teardown_provider_type: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_provider_type'] | default('') | b64decode
+         | default('vast', true) }}
   no_log: true
 
 - name: Validate provider type when config Secret is found
@@ -102,6 +109,7 @@
   vastdata.vms.views:
     vms: "{{ _vast_vms_conn }}"
     name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_teardown_tier }}"
+    path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_teardown_tier }}"
     state: absent
   failed_when: false
   register: vast_teardown_view_result

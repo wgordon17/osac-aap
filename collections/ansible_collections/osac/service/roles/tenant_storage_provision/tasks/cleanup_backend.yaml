@@ -15,7 +15,7 @@
     _tsp_storage_provider_type: "{{ lookup('env', 'STORAGE_PROVIDER_TYPE') | default('', true) }}"
 
 - name: Clean up VAST storage backend
-  when: _tsp_storage_provider_type == 'vast'
+  when: _tsp_storage_provider_type | lower == 'vast'
   ansible.builtin.include_role:
     name: osac.templates.vast_storage
     tasks_from: cleanup_backend

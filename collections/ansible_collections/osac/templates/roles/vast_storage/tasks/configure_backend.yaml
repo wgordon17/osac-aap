@@ -55,6 +55,7 @@
       ansible.builtin.set_fact:
         _vast_tenant_created: false
         _vast_vippool_created: false
+        _vast_view_created: false
 
     - name: Create VAST tenant
       vastdata.vms.tenants:
@@ -115,6 +116,10 @@
       register: vast_view_result
       no_log: true
 
+    - name: Mark VAST view as created
+      ansible.builtin.set_fact:
+        _vast_view_created: true
+
     - name: Log VAST view creation result
       ansible.builtin.debug:
         msg: >-
@@ -146,6 +151,16 @@
 
   rescue:
     # Attempt partial rollback of resources created before the failure.
+    - name: Remove VAST view if created before failure
+      when: _vast_view_created | default(false) | bool
+      vastdata.vms.views:
+        vms: "{{ _vast_vms_conn }}"
+        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_tier }}"
+        path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}"
+        state: absent
+      ignore_errors: true
+      no_log: true
+
     - name: Remove VAST VIP pool if created before failure
       when: _vast_vippool_created | default(false) | bool
       vastdata.vms.vippools:
