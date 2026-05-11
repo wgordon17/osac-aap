@@ -1,0 +1,74 @@
+---
+- name: Check if VAST CSI driver is already installed
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: CSIDriver
+    name: "{{ vast_storage_csi_provisioner }}"
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+  register: _vast_csi_driver_check
+
+- name: Check if OLM is available on cluster
+  when: _vast_csi_driver_check.resources | length == 0
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: CatalogSource
+    namespace: openshift-marketplace
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+  register: _vast_olm_check
+  ignore_errors: true
+
+- name: Fail if OLM is not available and CSI driver is not installed
+  when:
+    - _vast_csi_driver_check.resources | length == 0
+    - _vast_olm_check is failed
+  ansible.builtin.fail:
+    msg: >-
+      VAST CSI driver is not installed and OLM (Operator Lifecycle Manager) is not
+      available on this cluster. Install OLM or deploy the VAST CSI driver manually.
+
+# Creating an OLM Subscription grants cluster-admin-equivalent privileges to the operator.
+# This is a privilege escalation surface (SDR-002) — only the vast-csi-operator is granted,
+# and only when the CSI driver is not already present.
+- name: Ensure VAST CSI Operator Subscription exists
+  when: _vast_csi_driver_check.resources | length == 0
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: vast-csi-operator
+        namespace: "{{ vast_storage_csi_operator_namespace }}"
+      spec:
+        channel: "{{ vast_storage_csi_operator_channel }}"
+        name: vast-csi-operator
+        source: certified-operators
+        sourceNamespace: openshift-marketplace
+        installPlanApproval: "{{ vast_storage_csi_operator_approval }}"
+
+- name: Ensure VastCSIDriver CR exists
+  when: _vast_csi_driver_check.resources | length == 0
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+    definition:
+      apiVersion: csi.vastdata.com/v1
+      kind: VastCSIDriver
+      metadata:
+        name: "{{ vast_storage_csi_driver_name }}"
+        namespace: "{{ vast_storage_csi_operator_namespace }}"
+      spec:
+        driverType: "{{ 'block' if vast_storage_protocol == 'block' else 'nfs' }}"
+
+- name: Wait for VAST CSI driver to be registered
+  when: _vast_csi_driver_check.resources | length == 0
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: CSIDriver
+    name: "{{ vast_storage_csi_provisioner }}"
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+  register: _vast_csi_driver_wait
+  retries: 30
+  delay: 10
+  until: _vast_csi_driver_wait.resources | length > 0
