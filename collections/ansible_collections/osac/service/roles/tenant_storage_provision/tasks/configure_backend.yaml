@@ -11,7 +11,7 @@
 #   tenant_storage_provision_tiers        — the tier list (overridden via set_fact)
 #   _tsp_ref_sc                          — the reference StorageClass object
 #   _tsp_reference_sc_name               — the reference SC name
-#   tenant_namespace                      — the tenant's namespace (play-level var)
+#   tenant_namespace                      — the tenant's target namespace on the remote cluster (play-level var from create.yaml)
 #   kubeconfig                            — optional remote cluster kubeconfig
 - name: Check storage provider type
   ansible.builtin.set_fact:

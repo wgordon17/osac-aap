@@ -7,6 +7,7 @@
 #
 # Available variables when this runs:
 #   tenant_storage_provision_tenant_name  — the tenant name
+#   tenant_namespace                      — the tenant's target namespace on the remote cluster (play-level var from delete.yaml)
 #   _tsp_tenant_scs                      — list of tenant StorageClass objects about to be deleted
 #   kubeconfig                            — optional remote cluster kubeconfig
 - name: Check storage provider type

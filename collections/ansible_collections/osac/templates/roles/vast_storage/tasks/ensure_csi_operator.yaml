@@ -26,6 +26,17 @@
       VAST CSI driver is not installed and OLM (Operator Lifecycle Manager) is not
       available on this cluster. Install OLM or deploy the VAST CSI driver manually.
 
+- name: Warn if OLM is available but no CatalogSources found
+  when:
+    - _vast_csi_driver_check.resources | length == 0
+    - _vast_olm_check is not failed
+    - _vast_olm_check.resources | length == 0
+  ansible.builtin.debug:
+    msg: >-
+      OLM API is reachable but no CatalogSources found in openshift-marketplace.
+      The VAST CSI Operator Subscription may fail to install. Ensure the
+      certified-operators CatalogSource is available before provisioning.
+
 # Creating an OLM Subscription grants cluster-admin-equivalent privileges to the operator.
 # This is a privilege escalation surface (SDR-002) — only the vast-csi-operator is granted,
 # and only when the CSI driver is not already present.

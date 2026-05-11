@@ -1,4 +1,14 @@
 ---
+# tenant_namespace is a play-level var from the calling playbook (tenant_storage_provision delete.yaml).
+# Tenant name DNS label validation — prevents injection into resource names (SDR-004).
+- name: Validate tenant name format
+  ansible.builtin.assert:
+    that:
+      - tenant_storage_provision_tenant_name is match('^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$')
+    fail_msg: >-
+      Invalid tenant name '{{ tenant_storage_provision_tenant_name }}': must be a valid DNS label
+      (lowercase alphanumeric and hyphens, 1-63 characters, no leading/trailing hyphens).
+
 - name: Read tenant config Secret to get resource identifiers
   kubernetes.core.k8s_info:
     api_version: v1
@@ -14,19 +24,20 @@
   ansible.builtin.set_fact:
     vast_storage_teardown_vip_pool: "{{ vast_storage_teardown_config.resources[0].data.vip_pool_name | b64decode }}"
     vast_storage_teardown_tier: "{{ vast_storage_teardown_config.resources[0].data.storage_tier | b64decode }}"
-    vast_storage_teardown_protocol: "{{ vast_storage_teardown_config.resources[0].data.storage_protocol | b64decode | default(vast_storage_protocol, true) }}"
+    vast_storage_teardown_protocol: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode | default(vast_storage_protocol, true) }}
     vast_storage_teardown_provider_type: "{{ vast_storage_teardown_config.resources[0].data.storage_provider_type | b64decode }}"
   no_log: true
 
 - name: Validate provider type when config Secret is found
   when: >-
     vast_storage_teardown_config.resources | length > 0 and
-    vast_storage_teardown_provider_type != lookup('env', 'STORAGE_PROVIDER_TYPE') | default('vast', true)
+    vast_storage_teardown_provider_type != lookup('env', 'STORAGE_PROVIDER_TYPE') | default('', true)
   ansible.builtin.fail:
     msg: >-
       Tenant '{{ tenant_storage_provision_tenant_name }}' was provisioned with provider type
       '{{ vast_storage_teardown_provider_type }}' but the current STORAGE_PROVIDER_TYPE is
-      '{{ lookup('env', 'STORAGE_PROVIDER_TYPE') | default('vast', true) }}'.
+      '{{ lookup('env', 'STORAGE_PROVIDER_TYPE') | default('', true) }}'.
       Teardown must use the same provider that created the resources.
       Set STORAGE_PROVIDER_TYPE={{ vast_storage_teardown_provider_type }} and re-run.
 
@@ -57,7 +68,10 @@
     kind: VolumeSnapshotClass
     name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}"
   register: vast_teardown_vsc_result
-  ignore_errors: true
+  failed_when: >-
+    vast_teardown_vsc_result is failed and
+    'not found' not in (vast_teardown_vsc_result.msg | default('') | lower) and
+    '404' not in (vast_teardown_vsc_result.msg | default('') | lower)
 
 - name: Delete K8s CSI Secret in tenant namespace
   kubernetes.core.k8s:
@@ -84,15 +98,18 @@
       timeout: "{{ vast_storage_api_timeout | default(30) }}"
     name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_teardown_tier }}"
     state: absent
-  ignore_errors: true
+  failed_when: false
   register: vast_teardown_view_result
-  retries: 1
+  retries: 3
   delay: 5
-  until: vast_teardown_view_result is not failed
+  until: >-
+    not (vast_teardown_view_result is failed) or
+    'not found' in (vast_teardown_view_result.msg | default('') | lower)
   no_log: true
 
-- name: Delete VAST view policy (only if QoS was enabled)
-  when: vast_storage_qos_enabled
+# Attempt view policy deletion unconditionally — the provisioned QoS state may differ
+# from the current vast_storage_qos_enabled default. Use failed_when to tolerate "not found".
+- name: Delete VAST view policy
   vastdata.vms.viewpolicies:
     vms:
       host: "{{ vast_endpoint }}"
@@ -102,7 +119,9 @@
       timeout: "{{ vast_storage_api_timeout | default(30) }}"
     name: "policy-{{ tenant_storage_provision_tenant_name }}"
     state: absent
-  ignore_errors: true
+  failed_when: >-
+    vast_teardown_viewpolicy_result is failed and
+    'not found' not in (vast_teardown_viewpolicy_result.msg | default('') | lower)
   register: vast_teardown_viewpolicy_result
   no_log: true
 
@@ -116,11 +135,13 @@
       timeout: "{{ vast_storage_api_timeout | default(30) }}"
     name: "{{ vast_storage_teardown_vip_pool }}"
     state: absent
-  ignore_errors: true
+  failed_when: false
   register: vast_teardown_vippool_result
-  retries: 1
+  retries: 3
   delay: 5
-  until: vast_teardown_vippool_result is not failed
+  until: >-
+    not (vast_teardown_vippool_result is failed) or
+    'not found' in (vast_teardown_vippool_result.msg | default('') | lower)
   no_log: true
 
 - name: Delete VAST tenant
@@ -133,16 +154,18 @@
       timeout: "{{ vast_storage_api_timeout | default(30) }}"
     name: "{{ tenant_storage_provision_tenant_name }}"
     state: absent
-  ignore_errors: true
+  failed_when: false
   register: vast_teardown_tenant_result
   no_log: true
 
 # Gate config Secret deletion on VAST cleanup success — preserve it so a re-run can retry orphaned resources.
+# VSC deletion is included in the gate: a VSC failure means snapshots may still exist.
 - name: Set VAST cleanup success flag
   ansible.builtin.set_fact:
     vast_teardown_vast_clean: >-
-      {{ not (vast_teardown_view_result.failed | default(false)) and
-         not ((vast_teardown_viewpolicy_result | default({})).failed | default(false)) and
+      {{ not (vast_teardown_vsc_result.failed | default(false)) and
+         not (vast_teardown_view_result.failed | default(false)) and
+         not (vast_teardown_viewpolicy_result.failed | default(false)) and
          not (vast_teardown_vippool_result.failed | default(false)) and
          not (vast_teardown_tenant_result.failed | default(false)) }}
 
@@ -168,15 +191,13 @@
       was NOT deleted because one or more VAST-side resources failed to delete.
       Re-run the delete-org-storage playbook to retry (teardown is idempotent).
 
-# Parentheses required: `not (expr | default(false))` ensures | applies to expr, not to `not expr`.
-# vast_teardown_viewpolicy_result may be undefined when QoS is disabled — use | default({}).
 - name: Report teardown summary
   ansible.builtin.debug:
     msg: >-
       Teardown summary for tenant '{{ tenant_storage_provision_tenant_name }}':
       VolumeSnapshotClass: {{ 'ok' if not (vast_teardown_vsc_result.failed | default(false)) else vast_teardown_vsc_result.msg | default('error') }},
       VAST view: {{ 'ok' if not (vast_teardown_view_result.failed | default(false)) else vast_teardown_view_result.msg | default('error') }},
-      VAST view policy: {{ 'ok' if not ((vast_teardown_viewpolicy_result | default({})).failed | default(false)) else (vast_teardown_viewpolicy_result | default({})).msg | default('skipped/error') }},
+      VAST view policy: {{ 'ok' if not (vast_teardown_viewpolicy_result.failed | default(false)) else vast_teardown_viewpolicy_result.msg | default('error') }},
       VAST VIP pool: {{ 'ok' if not (vast_teardown_vippool_result.failed | default(false)) else vast_teardown_vippool_result.msg | default('error') }},
       VAST tenant: {{ 'ok' if not (vast_teardown_tenant_result.failed | default(false)) else vast_teardown_tenant_result.msg | default('error') }}.
       If any VAST resources failed to delete, re-run the delete-org-storage playbook (teardown is idempotent).

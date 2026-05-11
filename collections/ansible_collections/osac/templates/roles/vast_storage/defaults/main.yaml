@@ -24,8 +24,9 @@ vast_storage_config_namespace: "{{ lookup('env', 'OSAC_STORAGE_CONFIG_NAMESPACE'
 # (when running in compute-instance-ig which lacks VAST env vars in envFrom)
 vast_storage_admin_secret_name: "vast-admin-credentials"
 
-# VolumeSnapshotClass provisioner — same as NFS provisioner for VAST
-vast_storage_snapshot_provisioner: "csi.vastdata.com"
+# VolumeSnapshotClass provisioner — computed at runtime in configure_backend.yaml
+# based on vast_storage_protocol (nfs: csi.vastdata.com, block: block.csi.vastdata.com).
+# Intentionally not set here to avoid protocol mismatch.
 
 # TLS certificate validation for VAST VMS API calls.
 # Set to true in production; false allows self-signed certs in dev/test environments.

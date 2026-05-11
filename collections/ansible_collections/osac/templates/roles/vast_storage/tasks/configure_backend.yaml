@@ -1,4 +1,5 @@
 ---
+# tenant_namespace is a play-level var from the calling playbook (tenant_storage_provision create.yaml).
 # Tenant name DNS label validation — only printable ASCII, no path traversal.
 # Runs before any VMS API calls to prevent injection into resource names (SDR-004).
 - name: Validate tenant name format
@@ -11,13 +12,27 @@
 
 - name: Read VAST configuration from environment
   ansible.builtin.set_fact:
-    storage_provider_storage_tier: "{{ lookup('env', 'STORAGE_TIER') | default('default', true) }}"
-    storage_provider_encryption_enabled: "{{ lookup('env', 'STORAGE_ENCRYPTION_ENABLED') | default('true', true) | bool }}"
-    storage_provider_snapshots_enabled: "{{ lookup('env', 'STORAGE_SNAPSHOTS_ENABLED') | default('true', true) | bool }}"
+    vast_storage_tier: "{{ lookup('env', 'STORAGE_TIER') | default('default', true) }}"
+    vast_storage_encryption_enabled: "{{ lookup('env', 'STORAGE_ENCRYPTION_ENABLED') | default('true', true) | bool }}"
+    vast_storage_snapshots_enabled: "{{ lookup('env', 'STORAGE_SNAPSHOTS_ENABLED') | default('true', true) | bool }}"
+
+- name: Validate storage tier format
+  ansible.builtin.assert:
+    that:
+      - vast_storage_tier is match('^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$') or vast_storage_tier == 'default'
+    fail_msg: >-
+      Invalid storage tier '{{ vast_storage_tier }}': must be a valid DNS label
+      (lowercase alphanumeric and hyphens, 1-63 characters, no leading/trailing hyphens).
 
 - name: Determine CSI provisioner name based on storage protocol
   ansible.builtin.set_fact:
     vast_storage_csi_provisioner: >-
+      {{ vast_storage_csi_provisioner_block if vast_storage_protocol == 'block'
+         else vast_storage_csi_provisioner_nfs }}
+
+- name: Determine VolumeSnapshotClass provisioner based on storage protocol
+  ansible.builtin.set_fact:
+    vast_storage_snapshot_provisioner: >-
       {{ vast_storage_csi_provisioner_block if vast_storage_protocol == 'block'
          else vast_storage_csi_provisioner_nfs }}
 
@@ -27,20 +42,34 @@
 - name: Resolve VAST credentials (dual-source)
   ansible.builtin.include_tasks: read_credentials.yaml
 
+- name: Build VMS connection dict
+  ansible.builtin.set_fact:
+    _vast_vms_conn:
+      host: "{{ vast_endpoint }}"
+      username: "{{ vast_username }}"
+      password: "{{ vast_password }}"
+      validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
+      timeout: "{{ vast_storage_api_timeout | default(30) }}"
+  no_log: true
+
 - name: Provision VAST resources for tenant
   block:
+    - name: Track provisioning state
+      ansible.builtin.set_fact:
+        _vast_tenant_created: false
+        _vast_vippool_created: false
+
     - name: Create VAST tenant
       vastdata.vms.tenants:
-        vms:
-          host: "{{ vast_endpoint }}"
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-          validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-          timeout: "{{ vast_storage_api_timeout | default(30) }}"
+        vms: "{{ _vast_vms_conn }}"
         name: "{{ tenant_storage_provision_tenant_name }}"
         state: present
       register: vast_tenant_result
       no_log: true
+
+    - name: Mark VAST tenant as created
+      ansible.builtin.set_fact:
+        _vast_tenant_created: true
 
     - name: Fail if VAST tenant creation did not return an ID
       when: vast_tenant_result.tenants.id is not defined or vast_tenant_result.tenants.id | string | length == 0
@@ -56,17 +85,16 @@
 
     - name: Create VAST VIP pool for tenant
       vastdata.vms.vippools:
-        vms:
-          host: "{{ vast_endpoint }}"
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-          validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-          timeout: "{{ vast_storage_api_timeout | default(30) }}"
+        vms: "{{ _vast_vms_conn }}"
         name: "vippool-{{ tenant_storage_provision_tenant_name }}"
         tenant_id: "{{ vast_tenant_result.tenants.id }}"
         state: present
       register: vast_vippool_result
       no_log: true
+
+    - name: Mark VAST VIP pool as created
+      ansible.builtin.set_fact:
+        _vast_vippool_created: true
 
     - name: Fail if VAST VIP pool creation did not return an ID
       when: vast_vippool_result.vippools.id is not defined or vast_vippool_result.vippools.id | string | length == 0
@@ -80,14 +108,9 @@
 
     - name: Create VAST view for tenant
       vastdata.vms.views:
-        vms:
-          host: "{{ vast_endpoint }}"
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-          validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-          timeout: "{{ vast_storage_api_timeout | default(30) }}"
-        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ storage_provider_storage_tier }}"
-        path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ storage_provider_storage_tier }}"
+        vms: "{{ _vast_vms_conn }}"
+        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_tier }}"
+        path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}"
         tenant_id: "{{ vast_tenant_result.tenants.id }}"
         protocols:
           - "{{ vast_storage_protocol | upper }}"
@@ -98,18 +121,13 @@
     - name: Log VAST view creation result
       ansible.builtin.debug:
         msg: >-
-          VAST view 'view-{{ tenant_storage_provision_tenant_name }}-{{ storage_provider_storage_tier }}'
-          provisioned at path '/osac/{{ tenant_storage_provision_tenant_name }}/{{ storage_provider_storage_tier }}'
+          VAST view 'view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_tier }}'
+          provisioned at path '/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}'
 
     - name: Create VAST view policy (QoS) for tenant
       when: vast_storage_qos_enabled
       vastdata.vms.viewpolicies:
-        vms:
-          host: "{{ vast_endpoint }}"
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-          validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-          timeout: "{{ vast_storage_api_timeout | default(30) }}"
+        vms: "{{ _vast_vms_conn }}"
         name: "policy-{{ tenant_storage_provision_tenant_name }}"
         state: present
       register: vast_viewpolicy_result
@@ -123,18 +141,32 @@
     - name: Link view policy to view (QoS association)
       when: vast_storage_qos_enabled
       vastdata.vms.views:
-        vms:
-          host: "{{ vast_endpoint }}"
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-          validate_certs: "{{ vast_storage_validate_certs | default(true) }}"
-          timeout: "{{ vast_storage_api_timeout | default(30) }}"
-        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ storage_provider_storage_tier }}"
+        vms: "{{ _vast_vms_conn }}"
+        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_tier }}"
         qos_policy_id: "{{ vast_viewpolicy_result.viewpolicies.id }}"
         state: present
       no_log: true
 
   rescue:
+    # Attempt partial rollback of resources created before the failure.
+    - name: Remove VAST VIP pool if created before failure
+      when: _vast_vippool_created | default(false) | bool
+      vastdata.vms.vippools:
+        vms: "{{ _vast_vms_conn }}"
+        name: "vippool-{{ tenant_storage_provision_tenant_name }}"
+        state: absent
+      ignore_errors: true
+      no_log: true
+
+    - name: Remove VAST tenant if created before failure
+      when: _vast_tenant_created | default(false) | bool
+      vastdata.vms.tenants:
+        vms: "{{ _vast_vms_conn }}"
+        name: "{{ tenant_storage_provision_tenant_name }}"
+        state: absent
+      ignore_errors: true
+      no_log: true
+
     # Rescue block intentionally omits vast_username/vast_password to avoid credential leakage (SDR-001).
     - name: Report VAST API failure with tenant context
       ansible.builtin.fail:
@@ -142,16 +174,22 @@
           VAST API operation failed for tenant '{{ tenant_storage_provision_tenant_name }}'
           against endpoint '{{ vast_endpoint }}'.
           Failed task: {{ ansible_failed_task.name | default('unknown') }}.
-          Error: {{ ansible_failed_result.msg | default(ansible_failed_result | to_json) }}.
+          Error: details suppressed (no_log active).
           Partially-created VAST resources may exist — run the delete-org-storage
           playbook to clean up before retrying.
+
+  always:
+    - name: Clear VMS connection dict from facts
+      ansible.builtin.set_fact:
+        _vast_vms_conn: {}
+      no_log: true
 
 - name: Set tenant config facts
   ansible.builtin.set_fact:
     vast_storage_tenant_id: "{{ vast_tenant_result.tenants.id | string }}"
     vast_storage_vip_pool_name: "vippool-{{ tenant_storage_provision_tenant_name }}"
     vast_storage_view_policy_name: "policy-{{ tenant_storage_provision_tenant_name if vast_storage_qos_enabled else 'default' }}"
-    vast_storage_path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ storage_provider_storage_tier }}"
+    vast_storage_path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_tier }}"
 
 - name: Persist tenant config to K8s Secret on hub cluster
   kubernetes.core.k8s:
@@ -171,7 +209,7 @@
         vip_pool_name: "{{ vast_storage_vip_pool_name }}"
         view_policy_name: "{{ vast_storage_view_policy_name }}"
         storage_path: "{{ vast_storage_path }}"
-        storage_tier: "{{ storage_provider_storage_tier }}"
+        storage_tier: "{{ vast_storage_tier }}"
         storage_provider_type: "vast"
         storage_protocol: "{{ vast_storage_protocol }}"
   no_log: true
@@ -210,20 +248,20 @@
       secretNamespace: "{{ tenant_namespace }}"
 
 - name: Add encryption parameter to StorageClass if enabled
-  when: storage_provider_encryption_enabled
+  when: vast_storage_encryption_enabled
   ansible.builtin.set_fact:
     _vast_sc_params: "{{ _vast_sc_params | combine({'encryption': 'true'}) }}"
 
 - name: Override tier configuration for VAST
   ansible.builtin.set_fact:
     tenant_storage_provision_tiers:
-      - name: "{{ storage_provider_storage_tier | default('default') }}"
+      - name: "{{ vast_storage_tier | default('default') }}"
         provisioner: "{{ vast_storage_csi_provisioner | trim }}"
         parameters: "{{ _vast_sc_params }}"
         volume_binding_mode: "{{ 'WaitForFirstConsumer' if vast_storage_protocol == 'block' else 'Immediate' }}"
 
 - name: Check if VolumeSnapshot CRD is installed (required for VolumeSnapshotClass)
-  when: storage_provider_snapshots_enabled
+  when: vast_storage_snapshots_enabled
   kubernetes.core.k8s_info:
     api_version: apiextensions.k8s.io/v1
     kind: CustomResourceDefinition
@@ -233,7 +271,7 @@
 
 - name: Warn and skip VolumeSnapshotClass if CRD is not installed
   when: >-
-    storage_provider_snapshots_enabled and
+    vast_storage_snapshots_enabled and
     vast_storage_vsc_crd_check.resources | default([]) | length == 0
   ansible.builtin.debug:
     msg: >-
@@ -243,7 +281,7 @@
 
 - name: Create K8s VolumeSnapshotClass for tenant
   when: >-
-    storage_provider_snapshots_enabled and
+    vast_storage_snapshots_enabled and
     vast_storage_vsc_crd_check.resources | default([]) | length > 0
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig | default(omit) }}"
