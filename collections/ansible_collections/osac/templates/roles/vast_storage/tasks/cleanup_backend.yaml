@@ -105,7 +105,7 @@
       loop_control:
         label: "{{ item.name }}"
       register: vast_teardown_vsc_results
-      failed_when: false
+      ignore_errors: true
 
     - name: Delete K8s VolumeSnapshotClass (legacy single-tier naming)
       kubernetes.core.k8s:
@@ -115,7 +115,7 @@
         kind: VolumeSnapshotClass
         name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}"
       register: vast_teardown_vsc_legacy_result
-      failed_when: false
+      ignore_errors: true
 
     - name: Delete K8s CSI Secret in tenant namespace
       kubernetes.core.k8s:
@@ -132,19 +132,6 @@
         '404' not in (vast_teardown_csi_secret_result.msg | default('') | lower)
       no_log: true
 
-    - name: Delete VAST Views per tier
-      vastdata.vms.views:
-        vms: "{{ _vast_vms_conn }}"
-        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
-        path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ item.name }}"
-        state: absent
-      loop: "{{ vast_storage_teardown_tiers }}"
-      loop_control:
-        label: "{{ item.name }}"
-      ignore_errors: true
-      register: vast_teardown_view_results
-      no_log: true
-
     - name: Delete VAST Quotas for tiers that had quotas
       when: item.quota is defined and item.quota.hard_limit_gb is defined
       vastdata.vms.quotas:
@@ -157,6 +144,19 @@
         label: "{{ item.name }}"
       ignore_errors: true
       register: vast_teardown_quota_results
+      no_log: true
+
+    - name: Delete VAST Views per tier
+      vastdata.vms.views:
+        vms: "{{ _vast_vms_conn }}"
+        name: "view-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
+        path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ item.name }}"
+        state: absent
+      loop: "{{ vast_storage_teardown_tiers }}"
+      loop_control:
+        label: "{{ item.name }}"
+      ignore_errors: true
+      register: vast_teardown_view_results
       no_log: true
 
     - name: Delete VAST VIP pool

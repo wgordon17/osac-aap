@@ -45,7 +45,7 @@
 - name: Warn if OLM is available but no CatalogSources found
   when:
     - _vast_protocols_needing_install | length > 0
-    - _vast_olm_check is not failed
+    - not (_vast_olm_check.failed | default(false))
     - _vast_olm_check.resources | length == 0
   ansible.builtin.debug:
     msg: >-
