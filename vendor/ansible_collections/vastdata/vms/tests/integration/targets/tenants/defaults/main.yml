@@ -23,3 +23,7 @@ vms_auth:
   password: "{{ vast_password }}"
   validate_certs: false
   debug: true
+
+test_tenant_name_forcedel: "ansible-test-tenant-forcedel"
+test_tenant_forcedel_view_path: "/ansible-test-tenant-forcedel-view"
+test_tenant_forcedel_policy_name: "ansible-test-tenant-forcedel-policy"

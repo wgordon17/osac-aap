@@ -284,7 +284,7 @@
   when: result_by_gid_idempotent is defined and result_by_gid_idempotent is not skipped
 
 # ====================
-# Idempotency Tests - ANS-41 Bug Fix
+# Idempotency Tests
 # ====================
 
 - name: Test idempotency - first run with gid and tenant_id
@@ -305,14 +305,14 @@
   register: result_idempotent_second
   when: can_run_group_tests | bool and test_nonlocal_gid is not none and test_nonlocal_gid != ""
 
-- name: Verify idempotency - second run should NOT report changed (ANS-41 fix)
+- name: Verify idempotency - second run should NOT report changed
   ansible.builtin.assert:
     that:
       - result_idempotent_second is not changed
       - result_idempotent_second.nonlocal_group is defined
       - result_idempotent_second.nonlocal_group.gid == test_nonlocal_gid | int
     fail_msg: |
-      IDEMPOTENCY BUG (ANS-41): Second run with same gid and tenant_id reported changed=true.
+     Second run with same gid and tenant_id reported changed=true.
       This indicates tenant_id is being compared even though the API doesn't return it.
       Expected: changed=false
       Actual: changed={{ result_idempotent_second.changed }}
@@ -343,7 +343,7 @@
       - result_idempotent_groupname_second is not changed
       - result_idempotent_groupname_second.nonlocal_group is defined
     fail_msg: |
-      IDEMPOTENCY BUG (ANS-41): Second run with same groupname and tenant_id reported changed=true.
+      Second run with same groupname and tenant_id reported changed=true.
       Expected: changed=false
       Actual: changed={{ result_idempotent_groupname_second.changed }}
     success_msg: "Idempotency with groupname verified: second run correctly reported changed=false"

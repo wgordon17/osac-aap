@@ -353,6 +353,151 @@
   failed_when: false
 
 # ============================================================
+#                    FORCE_REMOVE TESTS
+# ============================================================
+- name: Force-remove pre-cleanup - delete leftover view (if any)
+  vastdata.vms.views:
+    vms: "{{ vms_auth }}"
+    path: "{{ test_tenant_forcedel_view_path }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Force-remove pre-cleanup - delete leftover view policy (if any)
+  vastdata.vms.viewpolicies:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_forcedel_policy_name }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Force-remove pre-cleanup - delete leftover tenant (if any)
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: absent
+    force_remove: true
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Force-remove pre-cleanup - delete orphan local provider (if any)
+  vastdata.vms.localproviders:
+    vms: "{{ vms_auth }}"
+    name: "provider-{{ test_tenant_name_forcedel }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+# --- Set up: tenant -> view policy -> view (makes the tenant non-empty) ---
+
+- name: Force-remove - create dedicated tenant (auto-creates local provider)
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: present
+  register: forcedel_tenant
+  when: can_run_tests | bool
+
+- name: Force-remove - verify tenant was created
+  ansible.builtin.assert:
+    that:
+      - forcedel_tenant is changed
+      - forcedel_tenant.tenants is defined
+      - forcedel_tenant.tenants.id is defined
+  when: forcedel_tenant is not skipped
+
+- name: Force-remove - create view policy bound to the tenant
+  vastdata.vms.viewpolicies:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_forcedel_policy_name }}"
+    flavor: "NFS"
+    tenant_id: "{{ forcedel_tenant.tenants.id }}"
+    state: present
+  register: forcedel_policy
+  when: can_run_tests | bool and forcedel_tenant is not skipped
+
+- name: Force-remove - create view inside the tenant (makes it non-empty)
+  vastdata.vms.views:
+    vms: "{{ vms_auth }}"
+    path: "{{ test_tenant_forcedel_view_path }}"
+    policy_id: "{{ forcedel_policy.viewpolicies.id }}"
+    tenant_id: "{{ forcedel_tenant.tenants.id }}"
+    protocols: ["NFS"]
+    create_dir: true
+    state: present
+  when: can_run_tests | bool and forcedel_tenant is not skipped
+
+# --- Test 1: delete WITHOUT force_remove must fail ---
+
+- name: Force-remove - try to delete non-empty tenant WITHOUT force_remove
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: absent
+  register: no_force_result
+  when: can_run_tests | bool and forcedel_tenant is not skipped
+  ignore_errors: true
+
+- name: Verify deletion without force_remove was rejected by VAST
+  ansible.builtin.assert:
+    that:
+      - no_force_result is failed
+      - "'DELETE ' in (no_force_result.msg | default(''))"
+      - "'/tenants/' in (no_force_result.msg | default(''))"
+      - "' -> 400: ' in (no_force_result.msg | default(''))"
+      - "'bad_request' in (no_force_result.msg | default('') | lower)"
+      - "'related objects' in (no_force_result.msg | default('') | lower)"
+  when: no_force_result is not skipped
+
+# --- Test 2: delete WITH force_remove must succeed ---
+
+- name: Force-remove - delete non-empty tenant WITH force_remove=true
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: absent
+    force_remove: true
+  register: force_result
+  when: can_run_tests | bool and forcedel_tenant is not skipped
+
+- name: Verify deletion with force_remove=true succeeded
+  ansible.builtin.assert:
+    that:
+      - force_result is changed
+      - force_result.diff is defined
+      - force_result.diff.after == {}
+  when: force_result is not skipped
+
+# --- Test 3: confirm the tenant is truly absent afterwards ---
+
+- name: Force-remove - look up tenant after force_remove (check_mode)
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: present
+  check_mode: true
+  register: forcedel_after
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Verify tenant is truly absent after force_remove
+  ansible.builtin.assert:
+    that:
+      - (forcedel_after is failed) or (forcedel_after.tenants is not defined) or (forcedel_after.tenants in [None, {}]) or (forcedel_after.tenants.id is not
+        defined)
+  when: forcedel_after is not skipped
+
+# --- Cleanup: drop the auto-created local provider so re-runs are clean ---
+
+- name: Force-remove - cleanup auto-created local provider
+  vastdata.vms.localproviders:
+    vms: "{{ vms_auth }}"
+    name: "provider-{{ test_tenant_name_forcedel }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+# ============================================================
 #                    FINAL CLEANUP
 # ============================================================
 
@@ -376,6 +521,42 @@
   vastdata.vms.tenants:
     vms: "{{ vms_auth }}"
     name: "{{ test_tenant_name }}-checkmode"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+# Safety-net cleanups for the force_remove test resources, in case the
+# test block itself failed mid-flight and left state behind. Order
+# matters: view -> view policy -> tenant (force_remove) -> local provider.
+- name: Final cleanup - remove force_remove test view if it exists
+  vastdata.vms.views:
+    vms: "{{ vms_auth }}"
+    path: "{{ test_tenant_forcedel_view_path }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Final cleanup - remove force_remove test view policy if it exists
+  vastdata.vms.viewpolicies:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_forcedel_policy_name }}"
+    state: absent
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Final cleanup - force_remove test tenant if it exists
+  vastdata.vms.tenants:
+    vms: "{{ vms_auth }}"
+    name: "{{ test_tenant_name_forcedel }}"
+    state: absent
+    force_remove: true
+  when: can_run_tests | bool
+  failed_when: false
+
+- name: Final cleanup - remove force_remove test tenant's auto-created local provider
+  vastdata.vms.localproviders:
+    vms: "{{ vms_auth }}"
+    name: "provider-{{ test_tenant_name_forcedel }}"
     state: absent
   when: can_run_tests | bool
   failed_when: false

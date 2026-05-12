@@ -129,7 +129,7 @@
   when: can_run_tests | bool
 
 # ====================
-# eventdefinitionconfigs – test syslog_port idempotency (ANS-42)
+# eventdefinitionconfigs – test syslog_port idempotency
 # ====================
 
 - name: Save current syslog configuration for restore
@@ -185,7 +185,7 @@
   when: can_run_tests | bool
 
 # ====================
-# eventdefinitionconfigs – test syslog_port idempotency (ANS-42)
+# eventdefinitionconfigs – test syslog_port idempotency
 # ====================
 
 - name: Save current syslog configuration for restore

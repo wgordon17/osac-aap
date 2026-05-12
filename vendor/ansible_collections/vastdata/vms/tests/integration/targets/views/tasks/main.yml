@@ -43,6 +43,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}"
+    force: true
     state: absent
   register: cleanup_result
   when: can_run_tests | bool
@@ -52,6 +53,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-tenant"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -201,6 +203,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-checkmode"
+    force: true
     state: absent
   register: result
   when: can_run_tests | bool
@@ -242,6 +245,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}"
+    force: true
     state: absent
   register: result
   when: can_run_tests | bool
@@ -263,6 +267,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}"
+    force: true
     state: absent
   register: result
   when: can_run_tests | bool
@@ -291,6 +296,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-delcheck"
+    force: true
     state: absent
   check_mode: true
   register: result
@@ -321,6 +327,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-delcheck"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -374,6 +381,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-tenant"
+    force: true
     state: absent
   when: can_run_tests | bool and test_view_tenant_id is defined
   failed_when: false
@@ -386,6 +394,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-create-dir-idempotency"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -431,6 +440,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-create-dir-idempotency"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -443,6 +453,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "/ans-efficient-pitohui2"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -451,6 +462,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "/ans-efficient-pitohui1"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -560,6 +572,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "/ans-efficient-pitohui2"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -568,6 +581,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "/ans-efficient-pitohui1"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -713,6 +727,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "/ans-laughing-dikkop"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -759,6 +774,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -767,6 +783,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-delcheck"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
@@ -775,6 +792,7 @@
   vastdata.vms.views:
     vms: "{{ vms_auth }}"
     path: "{{ test_view_path }}-tenant"
+    force: true
     state: absent
   when: can_run_tests | bool
   failed_when: false
