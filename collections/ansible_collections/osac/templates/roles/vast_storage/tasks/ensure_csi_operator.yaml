@@ -35,7 +35,7 @@
 - name: Fail if OLM is not available and CSI driver installation is needed
   when:
     - _vast_protocols_needing_install | length > 0
-    - _vast_olm_check is failed
+    - _vast_olm_check.failed | default(false)
   ansible.builtin.fail:
     msg: >-
       VAST CSI driver is not installed for protocols {{ _vast_protocols_needing_install | join(', ') }}

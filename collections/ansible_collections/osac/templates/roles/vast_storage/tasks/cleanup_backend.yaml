@@ -4,7 +4,7 @@
 - name: Validate tenant name format
   ansible.builtin.assert:
     that:
-      - tenant_storage_provision_tenant_name is match('^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$')
+      - tenant_storage_provision_tenant_name is match('^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
     fail_msg: >-
       Invalid tenant name '{{ tenant_storage_provision_tenant_name }}': must be a valid DNS label
       (lowercase alphanumeric and hyphens, 1-63 characters, no leading/trailing hyphens).
@@ -52,7 +52,7 @@
 - name: Validate provider type when config Secret is found
   when: >-
     vast_storage_teardown_config.resources | length > 0 and
-    vast_storage_teardown_provider_type != lookup('env', 'STORAGE_PROVIDER_TYPE') | default('', true)
+    vast_storage_teardown_provider_type != lookup('env', 'STORAGE_PROVIDER_TYPE') | default('vast', true)
   ansible.builtin.fail:
     msg: >-
       Tenant '{{ tenant_storage_provision_tenant_name }}' was provisioned with provider type
@@ -141,7 +141,7 @@
       loop: "{{ vast_storage_teardown_tiers }}"
       loop_control:
         label: "{{ item.name }}"
-      failed_when: false
+      ignore_errors: true
       register: vast_teardown_view_results
       no_log: true
 
@@ -155,7 +155,7 @@
       loop: "{{ vast_storage_teardown_tiers }}"
       loop_control:
         label: "{{ item.name }}"
-      failed_when: false
+      ignore_errors: true
       register: vast_teardown_quota_results
       no_log: true
 
@@ -164,12 +164,12 @@
         vms: "{{ _vast_vms_conn }}"
         name: "{{ vast_storage_teardown_vip_pool }}"
         state: absent
-      failed_when: false
+      ignore_errors: true
       register: vast_teardown_vippool_result
       retries: 3
       delay: 5
       until: >-
-        not (vast_teardown_vippool_result is failed) or
+        not (vast_teardown_vippool_result.failed | default(false)) or
         'not found' in (vast_teardown_vippool_result.msg | default('') | lower)
       no_log: true
 
@@ -178,7 +178,7 @@
         vms: "{{ _vast_vms_conn }}"
         name: "{{ tenant_storage_provision_tenant_name }}"
         state: absent
-      failed_when: false
+      ignore_errors: true
       register: vast_teardown_tenant_result
       no_log: true
 
