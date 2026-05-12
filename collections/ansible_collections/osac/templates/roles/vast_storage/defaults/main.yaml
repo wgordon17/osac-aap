@@ -3,17 +3,24 @@
 # Env-var-driven defaults follow the OSAC domain pattern:
 #   OSAC_PUBLISH_TEMPLATES_NAMESPACE_DEFAULT, OSAC_COMPUTE_INSTANCE_OPERATIONS_NAMESPACE_DEFAULT
 
-# Storage protocol — set in storage-operations-ig ConfigMap via VAST_STORAGE_PROTOCOL.
-vast_storage_protocol: "{{ lookup('env', 'VAST_STORAGE_PROTOCOL') | default('nfs', true) }}"
+# DEPRECATED: retained for cleanup_backend backward compat until PR 2 merges.
+# PR 2 (Task 5) removes this when cleanup_backend is rewritten for multi-tier.
+vast_storage_protocol: "nfs"
 
-# CSI provisioner names (VAST CSI driver standard names)
-vast_storage_csi_provisioner_nfs: "csi.vastdata.com"
-vast_storage_csi_provisioner_block: "block.csi.vastdata.com"
+# Multi-tier storage configuration — raw string from VAST_STORAGE_TIERS env var.
+# Parsed via from_json in configure_backend.yaml so parse errors produce actionable Ansible messages.
+# Each tier: {name: string, protocol: 'nfs'|'block', quota?: {hard_limit_gb: int, soft_limit_gb?: int}, replace_default?: bool}
+_vast_storage_tiers_raw: "{{ lookup('env', 'VAST_STORAGE_TIERS') | default('', true) }}"
 
-# QoS via viewpolicies — disabled by default for MVP
-vast_storage_qos_enabled: false
+# Maximum number of tiers allowed (SDR-010: prevents VMS API call amplification)
+vast_storage_max_tiers: 20
 
-# K8s Secret on hub cluster that stores per-tenant VAST config (tenant ID, VIP pool, view policy, path)
+# CSI provisioner names keyed by protocol (replaces individual vast_storage_csi_provisioner_nfs/block vars)
+vast_storage_csi_provisioner_map:
+  nfs: "csi.vastdata.com"
+  block: "block.csi.vastdata.com"
+
+# K8s Secret on hub cluster that stores per-tenant VAST config (tenant ID, VIP pool, tiers)
 vast_storage_tenant_config_secret_prefix: "vast-tenant-config-"
 
 # Namespace for hub-cluster config secrets — set via OSAC_STORAGE_CONFIG_NAMESPACE env var
@@ -23,10 +30,6 @@ vast_storage_config_namespace: "{{ lookup('env', 'OSAC_STORAGE_CONFIG_NAMESPACE'
 # K8s Secret name for VAST admin credentials used as JIT fallback
 # (when running in compute-instance-ig which lacks VAST env vars in envFrom)
 vast_storage_admin_secret_name: "vast-admin-credentials"
-
-# VolumeSnapshotClass provisioner — computed at runtime in configure_backend.yaml
-# based on vast_storage_protocol (nfs: csi.vastdata.com, block: block.csi.vastdata.com).
-# Intentionally not set here to avoid protocol mismatch.
 
 # TLS certificate validation for VAST VMS API calls.
 # Set to true in production; false allows self-signed certs in dev/test environments.

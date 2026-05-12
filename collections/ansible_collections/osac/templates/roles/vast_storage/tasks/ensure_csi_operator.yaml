@@ -1,14 +1,29 @@
 ---
-- name: Check if VAST CSI driver is already installed
+# _vast_required_protocols is set by configure_backend.yaml before this file is included.
+# vast_storage_csi_provisioner_map is defined in defaults/main.yaml.
+
+- name: Check if VAST CSI driver is installed for each required protocol
   kubernetes.core.k8s_info:
     api_version: storage.k8s.io/v1
     kind: CSIDriver
-    name: "{{ vast_storage_csi_provisioner }}"
+    name: "{{ vast_storage_csi_provisioner_map[item] }}"
     kubeconfig: "{{ kubeconfig | default(omit) }}"
-  register: _vast_csi_driver_check
+  loop: "{{ _vast_required_protocols }}"
+  loop_control:
+    label: "{{ item }}"
+  register: _vast_csi_driver_checks
+
+- name: Determine which protocols need CSI driver installation
+  ansible.builtin.set_fact:
+    _vast_protocols_needing_install: >-
+      {{ _vast_csi_driver_checks.results
+         | selectattr('resources', 'equalto', [])
+         | map(attribute='item') | list }}
+
+# OLM guards below are protocol-independent — run once, gated on any protocol needing install.
 
 - name: Check if OLM is available on cluster
-  when: _vast_csi_driver_check.resources | length == 0
+  when: _vast_protocols_needing_install | length > 0
   kubernetes.core.k8s_info:
     api_version: operators.coreos.com/v1alpha1
     kind: CatalogSource
@@ -17,18 +32,19 @@
   register: _vast_olm_check
   ignore_errors: true
 
-- name: Fail if OLM is not available and CSI driver is not installed
+- name: Fail if OLM is not available and CSI driver installation is needed
   when:
-    - _vast_csi_driver_check.resources | length == 0
+    - _vast_protocols_needing_install | length > 0
     - _vast_olm_check is failed
   ansible.builtin.fail:
     msg: >-
-      VAST CSI driver is not installed and OLM (Operator Lifecycle Manager) is not
-      available on this cluster. Install OLM or deploy the VAST CSI driver manually.
+      VAST CSI driver is not installed for protocols {{ _vast_protocols_needing_install | join(', ') }}
+      and OLM (Operator Lifecycle Manager) is not available on this cluster.
+      Install OLM or deploy the VAST CSI driver manually.
 
 - name: Warn if OLM is available but no CatalogSources found
   when:
-    - _vast_csi_driver_check.resources | length == 0
+    - _vast_protocols_needing_install | length > 0
     - _vast_olm_check is not failed
     - _vast_olm_check.resources | length == 0
   ansible.builtin.debug:
@@ -39,9 +55,9 @@
 
 # Creating an OLM Subscription grants cluster-admin-equivalent privileges to the operator.
 # This is a privilege escalation surface (SDR-002) — only the vast-csi-operator is granted,
-# and only when the CSI driver is not already present.
+# installed once regardless of how many protocols are required.
 - name: Ensure VAST CSI Operator Subscription exists
-  when: _vast_csi_driver_check.resources | length == 0
+  when: _vast_protocols_needing_install | length > 0
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig | default(omit) }}"
@@ -59,7 +75,7 @@
         installPlanApproval: "{{ vast_storage_csi_operator_approval }}"
 
 - name: Wait for VastCSIDriver CRD to be available
-  when: _vast_csi_driver_check.resources | length == 0
+  when: _vast_protocols_needing_install | length > 0
   kubernetes.core.k8s_info:
     api_version: apiextensions.k8s.io/v1
     kind: CustomResourceDefinition
@@ -70,8 +86,11 @@
   delay: 10
   until: _vast_crd_check.resources | length > 0
 
-- name: Ensure VastCSIDriver CR exists
-  when: _vast_csi_driver_check.resources | length == 0
+# First protocol uses the base driver name (backward-compatible with single-protocol deployments).
+# Additional protocols get a suffixed name. Assumes operator supports multiple VastCSIDriver CRs
+# with different driverTypes — see architect plan open question.
+- name: Ensure VastCSIDriver CR exists for each required protocol
+  when: _vast_protocols_needing_install | length > 0
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig | default(omit) }}"
@@ -79,18 +98,25 @@
       apiVersion: csi.vastdata.com/v1
       kind: VastCSIDriver
       metadata:
-        name: "{{ vast_storage_csi_driver_name }}"
+        name: "{{ vast_storage_csi_driver_name }}{{ '' if ansible_loop.first else '-' ~ item }}"
         namespace: "{{ vast_storage_csi_operator_namespace }}"
       spec:
-        driverType: "{{ 'block' if vast_storage_protocol == 'block' else 'nfs' }}"
+        driverType: "{{ item }}"
+  loop: "{{ _vast_protocols_needing_install }}"
+  loop_control:
+    label: "{{ item }}"
+    extended: true
 
-- name: Wait for VAST CSI driver to be registered
-  when: _vast_csi_driver_check.resources | length == 0
+- name: Wait for VAST CSI drivers to be registered
+  when: _vast_protocols_needing_install | length > 0
   kubernetes.core.k8s_info:
     api_version: storage.k8s.io/v1
     kind: CSIDriver
-    name: "{{ vast_storage_csi_provisioner }}"
+    name: "{{ vast_storage_csi_provisioner_map[item] }}"
     kubeconfig: "{{ kubeconfig | default(omit) }}"
+  loop: "{{ _vast_protocols_needing_install }}"
+  loop_control:
+    label: "{{ item }}"
   register: _vast_csi_driver_wait
   retries: 30
   delay: 10

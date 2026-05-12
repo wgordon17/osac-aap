@@ -25,15 +25,28 @@
     vast_storage_teardown_vip_pool: >-
       {{ vast_storage_teardown_config.resources[0].data['vip_pool_name'] | default('') | b64decode
          | default('vippool-' ~ tenant_storage_provision_tenant_name, true) }}
-    vast_storage_teardown_tier: >-
-      {{ vast_storage_teardown_config.resources[0].data['storage_tier'] | default('') | b64decode
-         | default('default', true) }}
-    vast_storage_teardown_protocol: >-
-      {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode
-         | default(vast_storage_protocol, true) }}
     vast_storage_teardown_provider_type: >-
       {{ vast_storage_teardown_config.resources[0].data['storage_provider_type'] | default('') | b64decode
          | default('vast', true) }}
+    _vast_teardown_raw_tiers: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_tiers'] | default('') | b64decode }}
+    _vast_teardown_legacy_tier: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_tier'] | default('') | b64decode
+         | default('default', true) }}
+    _vast_teardown_legacy_protocol: >-
+      {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode
+         | default(vast_storage_protocol, true) }}
+  no_log: true
+
+# Two-format reader: new Secrets store storage_tiers JSON; old Secrets store storage_tier/storage_protocol.
+# Regex check on leading '[' avoids from_json crash on empty or malformed values.
+- name: Parse tier list from tenant config Secret (new format or old-format fallback)
+  when: vast_storage_teardown_config.resources | length > 0
+  ansible.builtin.set_fact:
+    vast_storage_teardown_tiers: >-
+      {{ _vast_teardown_raw_tiers | from_json
+         if (_vast_teardown_raw_tiers | length > 0 and _vast_teardown_raw_tiers | regex_search('^\s*\['))
+         else [{'name': _vast_teardown_legacy_tier, 'protocol': _vast_teardown_legacy_protocol}] }}
   no_log: true
 
 - name: Validate provider type when config Secret is found
@@ -62,7 +75,9 @@
   when: vast_storage_teardown_config.resources | length == 0
   ansible.builtin.set_fact:
     vast_storage_teardown_vip_pool: "vippool-{{ tenant_storage_provision_tenant_name }}"
-    vast_storage_teardown_tier: "default"
+    vast_storage_teardown_tiers:
+      - name: default
+        protocol: nfs
 
 - name: Resolve VAST credentials for VAST-side cleanup
   ansible.builtin.include_tasks: read_credentials.yaml
@@ -77,18 +92,28 @@
       timeout: "{{ vast_storage_api_timeout | default(30) }}"
   no_log: true
 
-- name: Delete K8s VolumeSnapshotClass
+- name: Delete K8s VolumeSnapshotClasses per tier (new per-tier naming)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig | default(omit) }}"
+    state: absent
+    api_version: snapshot.storage.k8s.io/v1
+    kind: VolumeSnapshotClass
+    name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
+  loop: "{{ vast_storage_teardown_tiers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: vast_teardown_vsc_results
+  failed_when: false
+
+- name: Delete K8s VolumeSnapshotClass (legacy single-tier naming)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig | default(omit) }}"
     state: absent
     api_version: snapshot.storage.k8s.io/v1
     kind: VolumeSnapshotClass
     name: "vast-snapshot-{{ tenant_storage_provision_tenant_name }}"
-  register: vast_teardown_vsc_result
-  failed_when: >-
-    vast_teardown_vsc_result is failed and
-    'not found' not in (vast_teardown_vsc_result.msg | default('') | lower) and
-    '404' not in (vast_teardown_vsc_result.msg | default('') | lower)
+  register: vast_teardown_vsc_legacy_result
+  failed_when: false
 
 - name: Delete K8s CSI Secret in tenant namespace
   kubernetes.core.k8s:
@@ -105,19 +130,17 @@
     '404' not in (vast_teardown_csi_secret_result.msg | default('') | lower)
   no_log: true
 
-- name: Delete VAST view
+- name: Delete VAST Views per tier
   vastdata.vms.views:
     vms: "{{ _vast_vms_conn }}"
-    name: "view-{{ tenant_storage_provision_tenant_name }}-{{ vast_storage_teardown_tier }}"
-    path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ vast_storage_teardown_tier }}"
+    name: "view-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
+    path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ item.name }}"
     state: absent
+  loop: "{{ vast_storage_teardown_tiers }}"
+  loop_control:
+    label: "{{ item.name }}"
   failed_when: false
-  register: vast_teardown_view_result
-  retries: 3
-  delay: 5
-  until: >-
-    not (vast_teardown_view_result is failed) or
-    'not found' in (vast_teardown_view_result.msg | default('') | lower)
+  register: vast_teardown_view_results
   no_log: true
 
 # Attempt view policy deletion unconditionally — the provisioned QoS state may differ
@@ -161,11 +184,14 @@
 - name: Set VAST cleanup success flag
   ansible.builtin.set_fact:
     vast_teardown_vast_clean: >-
-      {{ not (vast_teardown_vsc_result.failed | default(false)) and
-         not (vast_teardown_view_result.failed | default(false)) and
-         not (vast_teardown_viewpolicy_result.failed | default(false)) and
-         not (vast_teardown_vippool_result.failed | default(false)) and
-         not (vast_teardown_tenant_result.failed | default(false)) }}
+      {{ (vast_teardown_vsc_results | default({'results': []})).results
+         | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list | length == 0
+         and not (vast_teardown_vsc_legacy_result.failed | default(false))
+         and (vast_teardown_view_results | default({'results': []})).results
+             | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list | length == 0
+         and not (vast_teardown_viewpolicy_result.failed | default(false))
+         and not (vast_teardown_vippool_result.failed | default(false))
+         and not (vast_teardown_tenant_result.failed | default(false)) }}
 
 - name: Delete tenant config K8s Secret from hub cluster (only when VAST cleanup succeeded)
   when: >-
@@ -193,11 +219,11 @@
   ansible.builtin.debug:
     msg: >-
       Teardown summary for tenant '{{ tenant_storage_provision_tenant_name }}':
-      VolumeSnapshotClass: {{ 'ok' if not (vast_teardown_vsc_result.failed | default(false)) else vast_teardown_vsc_result.msg | default('error') }},
-      VAST view: {{ 'ok' if not (vast_teardown_view_result.failed | default(false)) else vast_teardown_view_result.msg | default('error') }},
-      VAST view policy: {{ 'ok' if not (vast_teardown_viewpolicy_result.failed | default(false)) else vast_teardown_viewpolicy_result.msg | default('error') }},
-      VAST VIP pool: {{ 'ok' if not (vast_teardown_vippool_result.failed | default(false)) else vast_teardown_vippool_result.msg | default('error') }},
-      VAST tenant: {{ 'ok' if not (vast_teardown_tenant_result.failed | default(false)) else vast_teardown_tenant_result.msg | default('error') }}.
+      Tiers: {{ vast_storage_teardown_tiers | map(attribute='name') | join(', ') }},
+      VAST views: {{ (vast_teardown_view_results | default({'results': []})).results
+                     | rejectattr('failed', 'equalto', true) | list | length }}/{{ vast_storage_teardown_tiers | length }} ok,
+      VAST VIP pool: {{ 'ok' if not (vast_teardown_vippool_result.failed | default(false)) else 'error' }},
+      VAST tenant: {{ 'ok' if not (vast_teardown_tenant_result.failed | default(false)) else 'error' }}.
       If any VAST resources failed to delete, re-run the delete-org-storage playbook (teardown is idempotent).
 
 - name: Clear VAST credentials from facts

@@ -9,7 +9,9 @@ metadata:
   namespace: osac-system  # replace with your tenant-operations namespace
 data:
   STORAGE_PROVIDER_TYPE: "vast"
-  VAST_STORAGE_PROTOCOL: "nfs"
-  STORAGE_TIER: "default"
+  # VAST_STORAGE_TIERS: JSON array of tier definitions. Each tier gets its own VAST View and StorageClass.
+  # Optional per-tier fields: quota (hard_limit_gb, soft_limit_gb), replace_default (if true on ANY tier,
+  # VAST tiers replace the cluster default StorageClass entirely; default: false = additive).
+  VAST_STORAGE_TIERS: '[{"name":"default","protocol":"nfs"},{"name":"fast","protocol":"block","quota":{"hard_limit_gb":500,"soft_limit_gb":400}}]'
   STORAGE_ENCRYPTION_ENABLED: "true"
   STORAGE_SNAPSHOTS_ENABLED: "true"

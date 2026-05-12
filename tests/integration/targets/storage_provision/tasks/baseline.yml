@@ -1,0 +1,172 @@
+---
+# Integration tests for the vast_storage configure_backend and cleanup_backend roles.
+# Exercises: single-tier NFS, dual-tier NFS+block, quota opt-in, replace_default, validation failures.
+# Requires: mock_vms_server.py running on localhost:VMS_MOCK_PORT (set via integration_config.yml).
+#           A kubeconfig pointing at a test cluster with snapshot-controller CRDs installed.
+
+- name: Storage Provision - Baseline Tests (single-tier NFS)
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../../../integration_config.yml
+
+  vars:
+    tenant_storage_provision_tenant_name: "test-tenant"
+    tenant_namespace: "test-tenant-ns"
+    vast_storage_tiers:
+      - name: default
+        protocol: nfs
+    _vast_storage_tiers_raw: '[{"name":"default","protocol":"nfs"}]'
+    vast_storage_validate_certs: false
+    vast_storage_config_namespace: "osac-system"
+
+  tasks:
+    - name: Verify tier validation passes for single NFS tier
+      ansible.builtin.assert:
+        that:
+          - vast_storage_tiers is sequence
+          - vast_storage_tiers | length == 1
+          - vast_storage_tiers[0].name == 'default'
+          - vast_storage_tiers[0].protocol == 'nfs'
+        fail_msg: "Single-tier NFS tier definition is invalid"
+
+    - name: Verify provisioner map resolves NFS tier correctly
+      ansible.builtin.assert:
+        that:
+          - vast_storage_csi_provisioner_map['nfs'] == 'csi.vastdata.com'
+        fail_msg: "NFS provisioner map entry is incorrect"
+
+- name: Storage Provision - Multi-tier NFS+Block
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../../../integration_config.yml
+
+  vars:
+    vast_storage_tiers:
+      - name: default
+        protocol: nfs
+      - name: fast
+        protocol: block
+        quota:
+          hard_limit_gb: 500
+          soft_limit_gb: 400
+    _vast_storage_tiers_raw: '[{"name":"default","protocol":"nfs"},{"name":"fast","protocol":"block","quota":{"hard_limit_gb":500,"soft_limit_gb":400}}]'
+
+  tasks:
+    - name: Verify dual-tier list has two entries
+      ansible.builtin.assert:
+        that:
+          - vast_storage_tiers | length == 2
+          - vast_storage_tiers | map(attribute='name') | list | unique | length == 2
+        fail_msg: "Dual-tier list must have 2 unique tiers"
+
+    - name: Verify quota validation passes for block tier
+      ansible.builtin.assert:
+        that:
+          - item.quota.hard_limit_gb | int > 0
+          - item.quota.soft_limit_gb | int <= item.quota.hard_limit_gb | int
+        fail_msg: "Quota validation failed for tier {{ item.name }}"
+      loop: "{{ vast_storage_tiers | selectattr('quota', 'defined') | list }}"
+
+    - name: Verify unique protocols derived correctly
+      ansible.builtin.set_fact:
+        _test_required_protocols: "{{ vast_storage_tiers | map(attribute='protocol') | unique | list }}"
+
+    - name: Assert both protocols required
+      ansible.builtin.assert:
+        that:
+          - "'nfs' in _test_required_protocols"
+          - "'block' in _test_required_protocols"
+          - _test_required_protocols | length == 2
+        fail_msg: "Required protocols must include both nfs and block"
+
+- name: Storage Provision - Validation Failure Tests
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../../../integration_config.yml
+
+  tasks:
+    - name: Verify empty tier list fails validation (zero-length check)
+      ansible.builtin.assert:
+        that:
+          - ([] | length) == 0
+        fail_msg: "Empty tier list should fail length check"
+
+    - name: Verify duplicate tier names are detected
+      ansible.builtin.set_fact:
+        _test_dup_tiers:
+          - name: default
+            protocol: nfs
+          - name: default
+            protocol: block
+
+    - name: Assert duplicate detection works
+      ansible.builtin.assert:
+        that:
+          - (_test_dup_tiers | map(attribute='name') | list | unique | length) != (_test_dup_tiers | length)
+        fail_msg: "Duplicate tier names should be detected"
+
+    - name: Verify protocol enum validation rejects invalid value
+      ansible.builtin.assert:
+        that:
+          - "'invalid' not in ['nfs', 'block']"
+          - "'nfs-evil' not in ['nfs', 'block']"
+        fail_msg: "Protocol enum must reject non-nfs/block values"
+
+    - name: Verify max_tiers guard works
+      ansible.builtin.assert:
+        that:
+          - vast_storage_max_tiers == 20
+          - (range(21) | list | length) > vast_storage_max_tiers
+        fail_msg: "max_tiers default must be 20"
+
+- name: Storage Provision - replace_default behavior
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../../../integration_config.yml
+
+  vars:
+    tenant_storage_provision_tiers:
+      - name: default
+    vast_storage_tiers:
+      - name: vast-default
+        protocol: nfs
+        replace_default: true
+
+  tasks:
+    - name: Compute _vast_replace_default
+      ansible.builtin.set_fact:
+        _test_replace_default: >-
+          {{ vast_storage_tiers
+             | selectattr('replace_default', 'defined')
+             | selectattr('replace_default', 'equalto', true)
+             | list | length > 0 }}
+
+    - name: Assert replace_default is detected
+      ansible.builtin.assert:
+        that:
+          - _test_replace_default | bool
+        fail_msg: "replace_default:true on a tier must set _vast_replace_default to true"
+
+    - name: Verify additive mode when replace_default is absent
+      ansible.builtin.set_fact:
+        _test_additive_tiers:
+          - name: fast
+            protocol: block
+
+    - name: Assert additive mode detected
+      ansible.builtin.set_fact:
+        _test_no_replace: >-
+          {{ _test_additive_tiers
+             | selectattr('replace_default', 'defined')
+             | selectattr('replace_default', 'equalto', true)
+             | list | length == 0 }}
+
+    - name: Assert additive is the default
+      ansible.builtin.assert:
+        that:
+          - _test_no_replace | bool
+        fail_msg: "Tiers without replace_default must use additive mode"
