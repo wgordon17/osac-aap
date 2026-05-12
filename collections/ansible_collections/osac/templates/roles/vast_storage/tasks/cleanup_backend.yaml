@@ -143,17 +143,18 @@
   register: vast_teardown_view_results
   no_log: true
 
-# Attempt view policy deletion unconditionally — the provisioned QoS state may differ
-# from the current vast_storage_qos_enabled default. Use failed_when to tolerate "not found".
-- name: Delete VAST view policy
-  vastdata.vms.viewpolicies:
+- name: Delete VAST Quotas for tiers that had quotas
+  when: item.quota is defined and item.quota.hard_limit_gb is defined
+  vastdata.vms.quotas:
     vms: "{{ _vast_vms_conn }}"
-    name: "policy-{{ tenant_storage_provision_tenant_name }}"
+    name: "quota-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
+    path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ item.name }}"
     state: absent
-  failed_when: >-
-    vast_teardown_viewpolicy_result is failed and
-    'not found' not in (vast_teardown_viewpolicy_result.msg | default('') | lower)
-  register: vast_teardown_viewpolicy_result
+  loop: "{{ vast_storage_teardown_tiers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  failed_when: false
+  register: vast_teardown_quota_results
   no_log: true
 
 - name: Delete VAST VIP pool
@@ -189,7 +190,8 @@
          and not (vast_teardown_vsc_legacy_result.failed | default(false))
          and (vast_teardown_view_results | default({'results': []})).results
              | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list | length == 0
-         and not (vast_teardown_viewpolicy_result.failed | default(false))
+         and (vast_teardown_quota_results | default({'results': []})).results
+             | selectattr('failed', 'defined') | selectattr('failed', 'equalto', true) | list | length == 0
          and not (vast_teardown_vippool_result.failed | default(false))
          and not (vast_teardown_tenant_result.failed | default(false)) }}
 

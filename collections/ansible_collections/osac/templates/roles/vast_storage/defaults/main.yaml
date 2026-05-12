@@ -3,10 +3,6 @@
 # Env-var-driven defaults follow the OSAC domain pattern:
 #   OSAC_PUBLISH_TEMPLATES_NAMESPACE_DEFAULT, OSAC_COMPUTE_INSTANCE_OPERATIONS_NAMESPACE_DEFAULT
 
-# DEPRECATED: retained for cleanup_backend backward compat until PR 2 merges.
-# PR 2 (Task 5) removes this when cleanup_backend is rewritten for multi-tier.
-vast_storage_protocol: "nfs"
-
 # Multi-tier storage configuration — raw string from VAST_STORAGE_TIERS env var.
 # Parsed via from_json in configure_backend.yaml so parse errors produce actionable Ansible messages.
 # Each tier: {name: string, protocol: 'nfs'|'block', quota?: {hard_limit_gb: int, soft_limit_gb?: int}, replace_default?: bool}
