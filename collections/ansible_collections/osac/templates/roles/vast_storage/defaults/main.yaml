@@ -41,4 +41,6 @@ vast_storage_csi_operator_channel: "stable"
 # Automatic allows unattended upgrades; Manual requires human InstallPlan approval
 # which blocks automated provisioning in AAP workflows.
 vast_storage_csi_operator_approval: "Automatic"
+vast_storage_csi_operator_catalog_source: "certified-operators"
+vast_storage_csi_operator_catalog_namespace: "openshift-marketplace"
 vast_storage_csi_driver_name: "vastcsi-driver"

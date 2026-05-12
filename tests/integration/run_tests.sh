@@ -40,6 +40,7 @@ WORKFLOWS=(
 ROLE_TESTS=(
   "finalizer"
   "lease"
+  "storage_provision"
 )
 
 ROLE_SCENARIO_TESTS=(

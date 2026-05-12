@@ -9,6 +9,7 @@
   gather_facts: false
   vars_files:
     - ../../../integration_config.yml
+    - ../../../../../collections/ansible_collections/osac/templates/roles/vast_storage/defaults/main.yaml
 
   vars:
     tenant_storage_provision_tenant_name: "test-tenant"
@@ -41,6 +42,7 @@
   gather_facts: false
   vars_files:
     - ../../../integration_config.yml
+    - ../../../../../collections/ansible_collections/osac/templates/roles/vast_storage/defaults/main.yaml
 
   vars:
     vast_storage_tiers:
@@ -86,6 +88,7 @@
   gather_facts: false
   vars_files:
     - ../../../integration_config.yml
+    - ../../../../../collections/ansible_collections/osac/templates/roles/vast_storage/defaults/main.yaml
 
   tasks:
     - name: Verify empty tier list fails validation (zero-length check)
@@ -127,6 +130,7 @@
   gather_facts: false
   vars_files:
     - ../../../integration_config.yml
+    - ../../../../../collections/ansible_collections/osac/templates/roles/vast_storage/defaults/main.yaml
 
   vars:
     tenant_storage_provision_tiers:
