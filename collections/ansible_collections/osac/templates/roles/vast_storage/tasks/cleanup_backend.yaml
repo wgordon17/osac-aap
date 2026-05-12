@@ -152,6 +152,7 @@
         name: "view-{{ tenant_storage_provision_tenant_name }}-{{ item.name }}"
         path: "/osac/{{ tenant_storage_provision_tenant_name }}/{{ item.name }}"
         state: absent
+        force: true
       loop: "{{ vast_storage_teardown_tiers }}"
       loop_control:
         label: "{{ item.name }}"
@@ -178,6 +179,7 @@
         vms: "{{ _vast_vms_conn }}"
         name: "{{ tenant_storage_provision_tenant_name }}"
         state: absent
+        force_remove: true
       ignore_errors: true
       register: vast_teardown_tenant_result
       no_log: true
