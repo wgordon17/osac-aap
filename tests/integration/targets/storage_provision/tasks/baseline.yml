@@ -1,8 +1,8 @@
 ---
-# Integration tests for the vast_storage configure_backend and cleanup_backend roles.
+# Validation-only tests for the vast_storage tier configuration logic.
 # Exercises: single-tier NFS, dual-tier NFS+block, quota opt-in, replace_default, validation failures.
-# Requires: mock_vms_server.py running on localhost:VMS_MOCK_PORT (set via integration_config.yml).
-#           A kubeconfig pointing at a test cluster with snapshot-controller CRDs installed.
+# These are assertion tests against role defaults — they do NOT exercise the actual
+# configure_backend/cleanup_backend role tasks or the mock VMS server.
 
 - name: Storage Provision - Baseline Tests (single-tier NFS)
   hosts: localhost

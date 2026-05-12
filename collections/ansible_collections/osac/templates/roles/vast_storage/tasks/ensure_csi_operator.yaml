@@ -27,7 +27,7 @@
   kubernetes.core.k8s_info:
     api_version: operators.coreos.com/v1alpha1
     kind: CatalogSource
-    namespace: openshift-marketplace
+    namespace: "{{ vast_storage_csi_operator_catalog_namespace }}"
     kubeconfig: "{{ kubeconfig | default(omit) }}"
   register: _vast_olm_check
   ignore_errors: true
@@ -104,7 +104,6 @@
   loop: "{{ _vast_protocols_needing_install }}"
   loop_control:
     label: "{{ item }}"
-    extended: true
 
 - name: Wait for VAST CSI drivers to be registered
   when: _vast_protocols_needing_install | length > 0
