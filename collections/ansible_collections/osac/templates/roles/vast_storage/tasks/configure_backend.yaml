@@ -5,7 +5,7 @@
 - name: Validate tenant name format
   ansible.builtin.assert:
     that:
-      - tenant_storage_provision_tenant_name is match('^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$')
+      - tenant_storage_provision_tenant_name is match('^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
     fail_msg: >-
       Invalid tenant name '{{ tenant_storage_provision_tenant_name }}': must be a valid DNS label
       (lowercase alphanumeric and hyphens, 1-63 characters, no leading/trailing hyphens).
@@ -42,7 +42,7 @@
     that:
       - item is mapping
       - item.name is defined
-      - item.name is match('^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$') or item.name == 'default'
+      - item.name is match('^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
       - item.protocol is defined
       - item.protocol in ['nfs', 'block']
     fail_msg: >-
@@ -75,7 +75,8 @@
     that:
       - item.quota.hard_limit_gb is defined
       - item.quota.hard_limit_gb | int > 0
-      - item.quota.hard_limit_gb | int == item.quota.hard_limit_gb
+      - item.quota.hard_limit_gb | string | regex_search('^[0-9]+$')
+      - item.quota.soft_limit_gb is not defined or (item.quota.soft_limit_gb | string | regex_search('^[0-9]+$'))
       - (item.quota.soft_limit_gb | default(0) | int) >= 0
       - (item.quota.soft_limit_gb | default(0) | int) <= (item.quota.hard_limit_gb | int)
     fail_msg: >-
@@ -89,7 +90,7 @@
 # Task 2: Compute unique protocols — needed by ensure_csi_operator.yaml (included below)
 - name: Compute unique protocols required across all tiers
   ansible.builtin.set_fact:
-    _vast_required_protocols: "{{ vast_storage_tiers | map(attribute='protocol') | unique | list }}"
+    _vast_required_protocols: "{{ vast_storage_tiers | map(attribute='protocol') | unique | sort | list }}"
 
 # Tasks 2-4: Outer credential scope block (SDR-001).
 # Credentials are intentionally resolved before CSI install for fail-fast behavior (SDR-012 — acceptable risk).
@@ -192,7 +193,7 @@
           loop: "{{ _vast_view_results.results }}"
           loop_control:
             label: "{{ item.item.name }}"
-          when: item is changed
+          no_log: false
 
         # Task 3: Per-tier Quota creation (opt-in; SDR-008 — no_log for same reason as View)
         - name: Create VAST Quota per tier (when quota config present)
@@ -342,7 +343,11 @@
                      'volume_binding_mode': 'WaitForFirstConsumer' if tier.protocol == 'block' else 'Immediate'
                    }) %}
               {% endfor %}
-              {{ tiers }}
+              {{ tiers | to_json }}
+
+        - name: Parse StorageClass tier list
+          ansible.builtin.set_fact:
+            _vast_sc_tiers: "{{ _vast_sc_tiers | from_json }}"
 
         # Task 4: Additive tier override — any tier with replace_default: true replaces cluster default SC
         - name: Check if any tier requests default replacement
@@ -350,7 +355,7 @@
             _vast_replace_default: >-
               {{ vast_storage_tiers
                  | selectattr('replace_default', 'defined')
-                 | selectattr('replace_default', 'equalto', true)
+                 | selectattr('replace_default')
                  | list | length > 0 }}
 
         - name: Override tier configuration for VAST
@@ -419,4 +424,6 @@
         vast_storage_env_creds_available: false
         vast_storage_env_creds_partial: false
         vast_storage_admin_secret: {}
+        _vast_view_results: {}
+        _vast_quota_results: {}
       no_log: true
