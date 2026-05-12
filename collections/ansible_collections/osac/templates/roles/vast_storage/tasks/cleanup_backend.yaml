@@ -35,7 +35,7 @@
          | default('default', true) }}
     _vast_teardown_legacy_protocol: >-
       {{ vast_storage_teardown_config.resources[0].data['storage_protocol'] | default('') | b64decode
-         | default(vast_storage_protocol, true) }}
+         | default('nfs', true) }}
   no_log: true
 
 # Two-format reader: new Secrets store storage_tiers JSON; old Secrets store storage_tier/storage_protocol.
