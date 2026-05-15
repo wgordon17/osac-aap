@@ -1,0 +1,29 @@
+---
+# Deletes the per-tenant VAST view policy during teardown.
+# Best-effort cleanup — ignore_errors throughout.
+#
+# Requires in scope:
+#   _vast_vms_conn — VAST VMS connection dict
+#   tenant_name    — play-level var
+#
+# Sets output fact:
+#   _vast_view_policy_delete_failed
+
+- name: Delete per-tenant view policy
+  vastdata.vms.viewpolicies:
+    vms: "{{ _vast_vms_conn }}"
+    name: "osac-{{ tenant_name }}"
+    state: absent
+  register: _vast_view_policy_delete_result
+  ignore_errors: true  # noqa: ignore-errors
+  no_log: true
+
+- name: Set view policy deletion result fact for caller
+  ansible.builtin.set_fact:
+    _vast_view_policy_delete_failed: "{{ _vast_view_policy_delete_result is failed }}"
+
+- name: Log view policy deletion outcome
+  ansible.builtin.debug:
+    msg: >-
+      View policy 'osac-{{ tenant_name }}' deletion result:
+      {{ 'succeeded' if not (_vast_view_policy_delete_failed | bool) else 'failed (ignored)' }}

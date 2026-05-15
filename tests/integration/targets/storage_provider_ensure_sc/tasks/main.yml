@@ -1,0 +1,341 @@
+---
+# Integration test for osac.service.storage_provider ensure_storage_class action.
+# Tests StorageClass, CSI Secret, and VolumeSnapshotClass provisioning.
+# Requires: kind cluster with osac-system namespace and VolumeSnapshot CRDs.
+
+# ── Setup: Pre-create hub Secret fixture ──
+- name: "Storage Provider Ensure SC - Setup fixtures"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Delete any pre-existing test resources (clean slate)
+      block:
+        - name: Delete hub Secret if exists
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Secret
+            name: "vast-tenant-config-test-ensuresc"
+            namespace: "osac-system"
+          failed_when: false
+
+        - name: Delete CSI Secret if exists
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Secret
+            name: "vast-csi-test-ensuresc"
+            namespace: "osac-system"
+          failed_when: false
+
+        - name: Delete StorageClass if exists
+          kubernetes.core.k8s:
+            state: absent
+            api_version: storage.k8s.io/v1
+            kind: StorageClass
+            name: "vast-nfs-test-ensuresc-default"
+          failed_when: false
+
+        - name: Delete VolumeSnapshotClass if exists
+          kubernetes.core.k8s:
+            state: absent
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotClass
+            name: "vast-snapshot-test-ensuresc-default"
+          failed_when: false
+
+    - name: Create hub Secret fixture (simulates output from setup action)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "vast-tenant-config-test-ensuresc"
+            namespace: "osac-system"
+            labels:
+              app.kubernetes.io/managed-by: osac-aap
+              osac.openshift.io/tenant: "test-ensuresc"
+          type: Opaque
+          stringData:
+            vast_tenant_id: "999"
+            vast_local_provider_id: "1"
+            vip_pool_name: "osac-test-pool"
+            vast_endpoint: "127.0.0.1:18443"
+            storage_tiers: '[{"name":"default","protocol":"nfs","provider":"vast","qos_policy":"test-qos"}]'
+            storage_provider_type: "vast"
+            tenant_manager_name: "osac-test-ensuresc"
+            tenant_manager_username: "osac-test-ensuresc"
+            tenant_manager_password: "test-csi-password"
+            tenant_manager_id: "42"
+            tenant_role_id: "7"
+            view_policy_name: "osac-test-ensuresc"
+
+# ── Test: Ensure StorageClass provisioning ──
+- name: "Storage Provider Ensure SC - Run ensure_storage_class"
+  hosts: localhost
+  gather_facts: false
+
+  environment:
+    OSAC_STORAGE_CONFIG_NAMESPACE: "osac-system"
+
+  vars:
+    tenant_name: "test-ensuresc"
+    tenant_namespace: "osac-system"
+    storage_provider_tiers:
+      - name: default
+        protocol: nfs
+        provider: vast
+    storage_provider_action: ensure_storage_class
+    storage_provider_provisioning_target: vmaas
+    storage_provider_snapshots_enabled: true
+    vast_storage_validate_certs: false
+
+  tasks:
+    - name: Call storage_provider role with ensure_storage_class action
+      ansible.builtin.include_role:
+        name: osac.service.storage_provider
+      vars:
+        storage_provider_action: ensure_storage_class
+
+# ── Verify: StorageClass, CSI Secret, VolumeSnapshotClass ──
+- name: "Storage Provider Ensure SC - Verify StorageClass"
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    tenant_name: "test-ensuresc"
+
+  tasks:
+    - name: Read StorageClass
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "vast-nfs-test-ensuresc-default"
+      register: _sc_result
+
+    - name: Assert StorageClass exists
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources | length == 1
+        fail_msg: "StorageClass 'vast-nfs-test-ensuresc-default' was not created"
+        success_msg: "StorageClass exists"
+
+    - name: Assert StorageClass provisioner
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources[0].provisioner == "vastcsi-driver-nfs"
+        fail_msg: "Expected provisioner 'vastcsi-driver-nfs', got '{{ _sc_result.resources[0].provisioner }}'"
+        success_msg: "StorageClass provisioner correct"
+
+    - name: Assert StorageClass parameters
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources[0].parameters.vipPool == "osac-test-pool"
+          - _sc_result.resources[0].parameters.storagePath == "/osac/test-ensuresc/default"
+          - _sc_result.resources[0].parameters.secretName == "vast-csi-test-ensuresc"
+          - _sc_result.resources[0].parameters.secretNamespace == "osac-system"
+          - _sc_result.resources[0].parameters.viewPolicy == "osac-test-ensuresc"
+        fail_msg: "StorageClass parameters incorrect: {{ _sc_result.resources[0].parameters }}"
+        success_msg: "StorageClass parameters correct"
+
+    - name: Assert NFS StorageClass does NOT have encryption parameter
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources[0].parameters.encryption is not defined
+          - _sc_result.resources[0].parameters.hostEncryption is not defined
+        fail_msg: "NFS StorageClass should not have encryption parameters"
+        success_msg: "NFS StorageClass correctly excludes encryption parameters"
+
+    - name: Assert StorageClass labels
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources[0].metadata.labels['app.kubernetes.io/managed-by'] == 'osac-aap'
+          - _sc_result.resources[0].metadata.labels['osac.openshift.io/tenant'] == 'test-ensuresc'
+          - _sc_result.resources[0].metadata.labels['osac.openshift.io/storage-tier'] == 'default'
+          - _sc_result.resources[0].metadata.labels['osac.openshift.io/storage-protocol'] == 'nfs'
+        fail_msg: "StorageClass labels incorrect"
+        success_msg: "StorageClass labels correct"
+
+    - name: Assert StorageClass reclaim policy and binding mode
+      ansible.builtin.assert:
+        that:
+          - _sc_result.resources[0].reclaimPolicy == "Delete"
+          - _sc_result.resources[0].volumeBindingMode == "Immediate"
+        fail_msg: "StorageClass reclaimPolicy or volumeBindingMode incorrect"
+        success_msg: "StorageClass reclaimPolicy and volumeBindingMode correct"
+
+    # ── Verify CSI Secret ──
+    - name: Read CSI Secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "vast-csi-test-ensuresc"
+        namespace: "osac-system"
+      register: _csi_secret
+
+    - name: Assert CSI Secret exists
+      ansible.builtin.assert:
+        that:
+          - _csi_secret.resources | length == 1
+        fail_msg: "CSI Secret 'vast-csi-test-ensuresc' was not created"
+        success_msg: "CSI Secret exists"
+
+    - name: Assert CSI Secret uses tenant manager credentials (not admin creds)
+      ansible.builtin.assert:
+        that:
+          - _csi_secret.resources[0].data.username is defined
+          - (_csi_secret.resources[0].data.username | b64decode) == "osac-test-ensuresc"
+          - _csi_secret.resources[0].data.password is defined
+          - (_csi_secret.resources[0].data.password | b64decode) == "test-csi-password"
+          - _csi_secret.resources[0].data.endpoint is defined
+          - (_csi_secret.resources[0].data.endpoint | b64decode) == "127.0.0.1:18443"
+        fail_msg: "CSI Secret does not contain expected manager credentials"
+        success_msg: "CSI Secret contains tenant manager credentials (not admin creds)"
+
+    - name: Assert CSI Secret labels
+      ansible.builtin.assert:
+        that:
+          - _csi_secret.resources[0].metadata.labels['app.kubernetes.io/managed-by'] == 'osac-aap'
+          - _csi_secret.resources[0].metadata.labels['osac.openshift.io/tenant'] == 'test-ensuresc'
+        fail_msg: "CSI Secret labels incorrect"
+        success_msg: "CSI Secret labels correct"
+
+    # ── Verify VolumeSnapshotClass ──
+    - name: Check if VolumeSnapshotClass CRD exists
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: volumesnapshotclasses.snapshot.storage.k8s.io
+      register: _vsc_crd_check
+
+    - name: Read VolumeSnapshotClass (when CRD exists)
+      when: _vsc_crd_check.resources | length > 0
+      kubernetes.core.k8s_info:
+        api_version: snapshot.storage.k8s.io/v1
+        kind: VolumeSnapshotClass
+        name: "vast-snapshot-test-ensuresc-default"
+      register: _vsc_result
+
+    - name: Assert VolumeSnapshotClass exists (when CRD exists)
+      when: _vsc_crd_check.resources | length > 0
+      ansible.builtin.assert:
+        that:
+          - _vsc_result.resources | length == 1
+        fail_msg: "VolumeSnapshotClass 'vast-snapshot-test-ensuresc-default' was not created"
+        success_msg: "VolumeSnapshotClass exists"
+
+    - name: Assert VolumeSnapshotClass properties (when CRD exists)
+      when: _vsc_crd_check.resources | length > 0
+      ansible.builtin.assert:
+        that:
+          - _vsc_result.resources[0].driver == "vastcsi-driver-nfs"
+          - _vsc_result.resources[0].deletionPolicy == "Delete"
+          - _vsc_result.resources[0].parameters.secretName == "vast-csi-test-ensuresc"
+          - _vsc_result.resources[0].parameters.secretNamespace == "osac-system"
+        fail_msg: "VolumeSnapshotClass properties incorrect"
+        success_msg: "VolumeSnapshotClass properties correct"
+
+    - name: Assert VolumeSnapshotClass labels (when CRD exists)
+      when: _vsc_crd_check.resources | length > 0
+      ansible.builtin.assert:
+        that:
+          - _vsc_result.resources[0].metadata.labels['app.kubernetes.io/managed-by'] == 'osac-aap'
+          - _vsc_result.resources[0].metadata.labels['osac.openshift.io/tenant'] == 'test-ensuresc'
+          - _vsc_result.resources[0].metadata.labels['osac.openshift.io/storage-tier'] == 'default'
+        fail_msg: "VolumeSnapshotClass labels incorrect"
+        success_msg: "VolumeSnapshotClass labels correct"
+
+    # ── Verify output facts ──
+    - name: Assert storage_provider_storage_class_names output was set
+      ansible.builtin.assert:
+        that:
+          - storage_provider_storage_class_names is defined
+          - storage_provider_storage_class_names is iterable
+          - "'vast-nfs-test-ensuresc-default' in storage_provider_storage_class_names"
+        fail_msg: "storage_provider_storage_class_names not set correctly: {{ storage_provider_storage_class_names | default('undefined') }}"
+        success_msg: "storage_provider_storage_class_names output correct"
+
+# ── Test: Short-circuit on re-run ──
+- name: "Storage Provider Ensure SC - Verify short-circuit"
+  hosts: localhost
+  gather_facts: false
+
+  environment:
+    OSAC_STORAGE_CONFIG_NAMESPACE: "osac-system"
+
+  vars:
+    tenant_name: "test-ensuresc"
+    tenant_namespace: "osac-system"
+    storage_provider_tiers:
+      - name: default
+        protocol: nfs
+        provider: vast
+    storage_provider_action: ensure_storage_class
+    storage_provider_provisioning_target: vmaas
+    storage_provider_snapshots_enabled: true
+    vast_storage_validate_certs: false
+
+  tasks:
+    - name: Call ensure_storage_class again (should short-circuit)
+      ansible.builtin.include_role:
+        name: osac.service.storage_provider
+      vars:
+        storage_provider_action: ensure_storage_class
+
+    - name: Assert output still set after short-circuit
+      ansible.builtin.assert:
+        that:
+          - storage_provider_storage_class_names is defined
+          - "'vast-nfs-test-ensuresc-default' in storage_provider_storage_class_names"
+        fail_msg: "Short-circuit did not set output facts"
+        success_msg: "Short-circuit: output facts preserved"
+
+# ── Cleanup ──
+- name: "Storage Provider Ensure SC - Cleanup"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Delete StorageClass
+      kubernetes.core.k8s:
+        state: absent
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "vast-nfs-test-ensuresc-default"
+      failed_when: false
+
+    - name: Delete CSI Secret
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Secret
+        name: "vast-csi-test-ensuresc"
+        namespace: "osac-system"
+      failed_when: false
+
+    - name: Check if VolumeSnapshotClass CRD exists for cleanup
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: volumesnapshotclasses.snapshot.storage.k8s.io
+      register: _cleanup_vsc_crd
+
+    - name: Delete VolumeSnapshotClass
+      when: _cleanup_vsc_crd.resources | length > 0
+      kubernetes.core.k8s:
+        state: absent
+        api_version: snapshot.storage.k8s.io/v1
+        kind: VolumeSnapshotClass
+        name: "vast-snapshot-test-ensuresc-default"
+      failed_when: false
+
+    - name: Delete hub Secret
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Secret
+        name: "vast-tenant-config-test-ensuresc"
+        namespace: "osac-system"
+      failed_when: false
