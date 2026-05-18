@@ -20,18 +20,18 @@
         namespace: "osac-system"
       failed_when: false
 
-    - name: Inject failure on view creation (triggers rescue block)
+    - name: Inject failure on manager creation (triggers rescue block)
       ansible.builtin.uri:
         url: "https://127.0.0.1:18443/_inject_failure"
         validate_certs: false
         method: POST
         body_format: json
         body:
-          resource: views
+          resource: managers
           method: POST
           status: 500
           body:
-            error: "injected: simulating view creation failure"
+            error: "injected: simulating manager creation failure"
 
 # ── Test: Setup should fail but rescue should complete cleanly ──
 - name: "Storage Provider Setup Rollback - Run setup (expect failure)"
@@ -95,20 +95,13 @@
         return_content: true
       register: _mock_calls
 
-    - name: Assert rollback attempted QoS policy deletion
+    - name: Assert rollback queried VMS resources for cleanup
       ansible.builtin.assert:
         that:
-          - _mock_calls.json | selectattr('path', 'search', 'qospolicies') | list | length > 0
-        fail_msg: "Rollback did not attempt QoS policy cleanup"
-        success_msg: "Rollback attempted QoS policy cleanup"
-
-    - name: Assert rollback attempted view policy deletion
-      ansible.builtin.assert:
-        that:
-          - _mock_calls.json | selectattr('path', 'search', 'viewpolicies') | selectattr('method', 'equalto', 'DELETE') | list | length > 0
-            or _mock_calls.json | selectattr('path', 'search', 'viewpolicies') | selectattr('method', 'equalto', 'GET') | list | length > 1
-        fail_msg: "Rollback did not attempt view policy cleanup"
-        success_msg: "Rollback attempted view policy cleanup"
+          - _mock_calls.json | selectattr('path', 'search', 'views.*tenant_id=') | selectattr('method', 'equalto', 'GET') | list | length > 0
+            or _mock_calls.json | selectattr('path', 'search', 'qospolicies.*tenant_id=') | selectattr('method', 'equalto', 'GET') | list | length > 0
+        fail_msg: "Rollback did not query VMS resources by tenant_id for cleanup"
+        success_msg: "Rollback queried VMS resources by tenant_id"
 
     - name: Assert rollback attempted tenant deletion
       ansible.builtin.assert:

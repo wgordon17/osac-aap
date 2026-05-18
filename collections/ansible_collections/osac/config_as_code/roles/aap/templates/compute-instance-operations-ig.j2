@@ -36,6 +36,9 @@ spec:
       envFrom:
         - secretRef:
             name: cluster-fulfillment-ig
+        - secretRef:
+            name: storage-operations-ig
+            optional: true
         - configMapRef:
             name: storage-operations-ig
             optional: true

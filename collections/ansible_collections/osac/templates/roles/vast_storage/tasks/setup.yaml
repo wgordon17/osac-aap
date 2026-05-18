@@ -151,70 +151,13 @@
           ansible.builtin.debug:
             msg: "VAST tenant '{{ tenant_name }}' provisioned with ID: {{ _vast_tenant_result.tenants.id }}"
 
-        - name: Initialize view policy accumulators
+        - name: Set tenant ID for downstream tasks
           ansible.builtin.set_fact:
-            _vast_view_policy_ids: {}
-            _vast_view_policy_names: {}
-
-        - name: Create per-protocol view policy
-          ansible.builtin.include_tasks: create_view_policy.yaml
-          loop: "{{ _vast_required_protocols }}"
-          loop_control:
-            loop_var: _vast_vp_protocol
-
-        - name: Warn that block encryption requires VAST cluster-side configuration
-          ansible.builtin.debug:
-            msg: >-
-              Block tiers configured for tenant '{{ tenant_name }}'. If a passphrase is
-              provided, hostEncryption will be set on block StorageClasses. Ensure the
-              VAST cluster has encryption capability licensed and enabled.
-          when: _vast_required_protocols | intersect(['block']) | length > 0
+            _vast_tenant_id: "{{ _vast_tenant_result.tenants.id | string }}"
 
         - name: Resolve local_provider_id from VAST tenant result
           ansible.builtin.set_fact:
             _vast_local_provider_id: "{{ _vast_tenant_result.tenants.local_provider_id }}"
-
-        - name: Create VAST view per tier
-          vastdata.vms.views:
-            vms: "{{ _vast_vms_conn }}"
-            name: "view-{{ tenant_name }}-{{ item.name }}"
-            path: "/osac/{{ tenant_name }}/{{ item.name }}"
-            create_dir: true
-            policy_id: "{{ _vast_view_policy_ids[item.protocol] }}"
-            tenant_id: "{{ _vast_tenant_result.tenants.id }}"
-            protocols:
-              - "{{ item.protocol | upper }}"
-            state: present
-          loop: "{{ _provider_tiers }}"
-          loop_control:
-            label: "view-{{ tenant_name }}-{{ item.name }}"
-          register: _vast_view_results
-          no_log: true
-
-        - name: Log VAST view creation results
-          ansible.builtin.debug:
-            msg: "VAST view 'view-{{ tenant_name }}-{{ item.name }}' provisioned at path '/osac/{{ tenant_name }}/{{ item.name }}'"
-          loop: "{{ _provider_tiers }}"
-          loop_control:
-            label: "view-{{ tenant_name }}-{{ item.name }}"
-
-        - name: Create per-tier QoS policies
-          ansible.builtin.include_tasks: create_qos_policy.yaml
-
-        - name: Create VAST quota per tier (when quota specified)
-          vastdata.vms.quotas:
-            vms: "{{ _vast_vms_conn }}"
-            name: "quota-{{ tenant_name }}-{{ item.name }}"
-            path: "/osac/{{ tenant_name }}/{{ item.name }}"
-            tenant_id: "{{ _vast_tenant_result.tenants.id }}"
-            hard_limit: "{{ item.quota }}"
-            state: present
-          loop: "{{ _provider_tiers | selectattr('quota', 'defined') | list }}"
-          loop_control:
-            label: "quota-{{ tenant_name }}-{{ item.name }}"
-          register: _vast_quota_results
-          no_log: true
-          when: _provider_tiers | selectattr('quota', 'defined') | list | length > 0
 
         - name: Create per-tenant VMS manager with CSI role
           ansible.builtin.include_tasks: create_tenant_manager.yaml
@@ -237,15 +180,12 @@
                 vast_local_provider_id: "{{ _vast_local_provider_id | string }}"
                 vip_pool_name: "{{ vast_storage_vip_pool_name }}"
                 vast_endpoint: "{{ vast_endpoint }}"
-                storage_tiers: "{{ _provider_tiers | to_json }}"
                 storage_provider_type: "vast"
                 tenant_manager_name: "{{ _vast_tenant_manager_name }}"
                 tenant_manager_username: "{{ _vast_tenant_manager_username }}"
                 tenant_manager_password: "{{ _vast_tenant_manager_password }}"
                 tenant_manager_id: "{{ _vast_tenant_manager_id | default('') | string }}"
                 tenant_role_id: "{{ _vast_tenant_role_id | default('') | string }}"
-                view_policy_name: "{{ (_vast_view_policy_names.nfs | default(_vast_view_policy_names.values() | list | first)) | default('') }}"
-                view_policy_names: "{{ _vast_view_policy_names | to_json }}"
                 block_encryption_passphrase: "{{ storage_provider_block_encryption_passphrase | default('') }}"
           no_log: true
 
@@ -334,17 +274,13 @@
         vast_password: ""
         _vast_vms_conn: {}
 
+        _vast_tenant_id: ""
         _vast_tenant_manager_name: ""
         _vast_tenant_manager_username: ""
         _vast_tenant_manager_password: ""
         _vast_tenant_manager_id: ""
         _vast_tenant_role_id: ""
         _vast_local_provider_id: ""
-        _vast_view_policy_name: ""
-        _vast_view_policy_id: ""
-        _vast_view_policy_ids: {}
-        _vast_view_policy_names: {}
-        _vast_view_policy_names_raw: ""
       no_log: true
 
 - name: Set storage_provider_tenant_config output fact
@@ -352,4 +288,3 @@
     storage_provider_tenant_config:
       vast_tenant_id: "{{ _vast_tenant_result.tenants.id | string }}"
       vip_pool_name: "{{ vast_storage_vip_pool_name }}"
-      storage_tiers: "{{ _provider_tiers }}"

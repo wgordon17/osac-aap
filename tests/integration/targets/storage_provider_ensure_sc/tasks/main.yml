@@ -87,6 +87,9 @@
   gather_facts: false
 
   environment:
+    VAST_ENDPOINT: "127.0.0.1:18443"
+    VAST_USERNAME: "admin"
+    VAST_PASSWORD: "admin"
     OSAC_STORAGE_CONFIG_NAMESPACE: "osac-system"
 
   vars:
@@ -334,6 +337,9 @@
   gather_facts: false
 
   environment:
+    VAST_ENDPOINT: "127.0.0.1:18443"
+    VAST_USERNAME: "admin"
+    VAST_PASSWORD: "admin"
     OSAC_STORAGE_CONFIG_NAMESPACE: "osac-system"
 
   vars:
@@ -366,6 +372,39 @@
           - "storage_provider_storage_class_names | map(attribute='name') | list is superset(['vast-nfs-test-ensuresc-default', 'vast-block-test-ensuresc-block-tier'])"
         fail_msg: "Short-circuit did not set output facts"
         success_msg: "Short-circuit: output facts preserved"
+
+# ── Verify: VMS resources created during ensure_storage_class ──
+- name: "Storage Provider Ensure SC - Verify VMS resource creation"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Get mock server call log
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:18443/_calls"
+        validate_certs: false
+        method: GET
+        return_content: true
+      register: _mock_calls
+
+    - name: Parse mock call log
+      ansible.builtin.set_fact:
+        _call_log: "{{ _mock_calls.json }}"
+
+    - name: Assert views were created
+      ansible.builtin.assert:
+        that:
+          - _call_log | selectattr('path', 'search', 'views') | selectattr('method', 'equalto', 'POST') | list | length > 0
+            or _call_log | selectattr('path', 'search', 'views') | selectattr('method', 'equalto', 'GET') | list | length > 0
+        fail_msg: "No view API calls found — ensure_storage_class should create views"
+        success_msg: "View API calls detected"
+
+    - name: Assert view policies were created
+      ansible.builtin.assert:
+        that:
+          - _call_log | selectattr('path', 'search', 'viewpolicies') | list | length > 0
+        fail_msg: "No view policy API calls found — ensure_storage_class should create view policies"
+        success_msg: "View policy API calls detected"
 
 # ── Cleanup ──
 - name: "Storage Provider Ensure SC - Cleanup"

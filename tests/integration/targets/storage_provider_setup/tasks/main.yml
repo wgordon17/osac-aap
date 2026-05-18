@@ -100,7 +100,6 @@
           vast_local_provider_id: "{{ _hub_secret.resources[0].data.vast_local_provider_id | b64decode }}"
           vip_pool_name: "{{ _hub_secret.resources[0].data.vip_pool_name | b64decode }}"
           vast_endpoint: "{{ _hub_secret.resources[0].data.vast_endpoint | b64decode }}"
-          storage_tiers: "{{ _hub_secret.resources[0].data.storage_tiers | b64decode }}"
           storage_provider_type: "{{ _hub_secret.resources[0].data.storage_provider_type | b64decode }}"
 
     - name: Assert hub Secret has tenant manager name
@@ -146,15 +145,6 @@
           - _secret_data.storage_provider_type == "vast"
         fail_msg: "Expected storage_provider_type 'vast', got '{{ _secret_data.storage_provider_type }}'"
         success_msg: "storage_provider_type correct"
-
-    - name: Assert hub Secret has storage tiers as JSON array
-      ansible.builtin.assert:
-        that:
-          - (_secret_data.storage_tiers if _secret_data.storage_tiers is not string else _secret_data.storage_tiers | from_json) | length == 1
-          - ((_secret_data.storage_tiers if _secret_data.storage_tiers is not string else _secret_data.storage_tiers | from_json)[0]).name == "default"
-          - ((_secret_data.storage_tiers if _secret_data.storage_tiers is not string else _secret_data.storage_tiers | from_json)[0]).protocol == "nfs"
-        fail_msg: "storage_tiers not stored correctly: {{ _secret_data.storage_tiers }}"
-        success_msg: "storage_tiers correct"
 
     - name: Assert hub Secret labels
       ansible.builtin.assert:
@@ -208,13 +198,6 @@
         fail_msg: "No tenant creation API call found in mock call log"
         success_msg: "Tenant creation API call detected"
 
-    - name: Assert view was created
-      ansible.builtin.assert:
-        that:
-          - _call_log | selectattr('path', 'search', 'views') | list | length > 0
-        fail_msg: "No view creation API call found in mock call log"
-        success_msg: "View creation API call detected"
-
     - name: Assert admin auth was performed
       ansible.builtin.assert:
         that:
@@ -228,80 +211,6 @@
           - _call_log | selectattr('path', 'search', 'managers') | list | length > 0
         fail_msg: "No manager creation API call found in mock call log"
         success_msg: "Manager creation API call detected"
-
-    - name: Assert viewPolicy was created
-      ansible.builtin.assert:
-        that:
-          - _call_log | selectattr('path', 'search', 'viewpolicies') | list | length > 0
-        fail_msg: "No viewPolicy API call found in mock call log"
-        success_msg: "viewPolicy API call detected"
-
-    - name: Assert hub Secret contains view_policy_name
-      ansible.builtin.assert:
-        that:
-          - _hub_secret.resources[0].data.view_policy_name is defined
-          - (_hub_secret.resources[0].data.view_policy_name | b64decode) == "osac-test-setup-nfs"
-          - _hub_secret.resources[0].data.view_policy_names is defined
-        fail_msg: "Hub Secret missing or incorrect view_policy_name"
-        success_msg: "Hub Secret view_policy_name and view_policy_names correct"
-
-    - name: Assert QoS policy was created
-      ansible.builtin.assert:
-        that:
-          - _call_log | selectattr('path', 'search', 'qospolicies') | list | length > 0
-        fail_msg: "No QoS policy API call found in mock call log"
-        success_msg: "QoS policy API call detected"
-
-    - name: Extract QoS POST calls from log
-      ansible.builtin.set_fact:
-        _qos_posts: >-
-          {{ _call_log | selectattr('path', 'search', '/api/qospolicies')
-             | selectattr('method', 'equalto', 'POST') | list }}
-
-    - name: Assert QoS POST body includes static_limits
-      ansible.builtin.assert:
-        that:
-          - _qos_posts | length > 0
-          - _qos_posts[0].body.static_limits is defined
-          - _qos_posts[0].body.static_limits.max_reads_bw_mbps is defined
-        fail_msg: "QoS POST body missing static_limits: {{ _qos_posts | to_json }}"
-        success_msg: "QoS POST body includes static_limits"
-
-    - name: Extract view POST calls from log
-      ansible.builtin.set_fact:
-        _view_posts: >-
-          {{ _call_log | selectattr('path', 'search', 'views')
-             | selectattr('method', 'equalto', 'POST') | list }}
-
-    - name: Assert view creation includes create_dir
-      ansible.builtin.assert:
-        that:
-          - _view_posts | length > 0
-          - _view_posts[0].body.create_dir is defined
-          - _view_posts[0].body.create_dir | bool
-        fail_msg: "View POST body missing create_dir: {{ _view_posts | to_json }}"
-        success_msg: "View creation includes create_dir: true"
-
-    - name: Assert view creation includes tenant_id
-      ansible.builtin.assert:
-        that:
-          - _view_posts[0].body.tenant_id is defined
-        fail_msg: "View POST body missing tenant_id"
-        success_msg: "View creation includes tenant_id"
-
-    - name: Extract viewpolicy POST calls from log
-      ansible.builtin.set_fact:
-        _vp_posts: >-
-          {{ _call_log | selectattr('path', 'search', 'viewpolicies')
-             | selectattr('method', 'equalto', 'POST') | list }}
-
-    - name: Assert viewpolicy creation includes tenant_id
-      ansible.builtin.assert:
-        that:
-          - _vp_posts | length > 0
-          - _vp_posts[0].body.tenant_id is defined
-        fail_msg: "ViewPolicy POST body missing tenant_id: {{ _vp_posts | to_json }}"
-        success_msg: "ViewPolicy creation includes tenant_id"
 
 # ── Cleanup ──
 - name: "Storage Provider Setup - Cleanup"

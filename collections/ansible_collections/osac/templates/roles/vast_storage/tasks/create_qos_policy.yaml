@@ -2,13 +2,10 @@
 # Creates per-tier QoS policies on VAST via REST API for tiers that define qos_policy.
 # Uses ansible.builtin.uri because the vendored collection has no QoS module.
 #
-# Requires in scope (set by setup.yaml before calling this file):
-#   vast_endpoint                  — VMS API hostname
-#   vast_username / vast_password  — admin credentials
-#   vast_storage_validate_certs    — TLS validation flag
-#   vast_storage_api_timeout       — API timeout (seconds)
-#   _vast_tenant_result.tenants.id — VAST tenant ID
-#   _provider_tiers                — tier list from dispatcher
+# Requires in scope:
+#   _vast_vms_conn      — VAST VMS connection dict (admin or tenant manager)
+#   _vast_tenant_id     — VAST tenant ID
+#   _provider_tiers     — tier list from dispatcher
 #
 # Sets output fact:
 #   _vast_qos_policy_names — list of created QoS policy names
@@ -31,28 +28,28 @@
 - name: Create QoS policies for tiers that define them
   when: _vast_qos_tiers | length > 0
   block:
-    - name: Authenticate to VAST VMS as admin for QoS management
+    - name: Authenticate to VAST VMS for QoS management
       ansible.builtin.uri:
-        url: "https://{{ vast_endpoint }}/api/token/"
+        url: "https://{{ _vast_vms_conn.host }}/api/token/"
         method: POST
         body_format: json
         body:
-          username: "{{ vast_username }}"
-          password: "{{ vast_password }}"
-        validate_certs: "{{ vast_storage_validate_certs }}"
-        timeout: "{{ vast_storage_api_timeout | int }}"
+          username: "{{ _vast_vms_conn.username }}"
+          password: "{{ _vast_vms_conn.password }}"
+        validate_certs: "{{ _vast_vms_conn.validate_certs }}"
+        timeout: "{{ _vast_vms_conn.timeout | int }}"
         status_code: [200, 201]
       register: _vast_qos_auth
       no_log: true
 
     - name: Check if QoS policy already exists per tier
       ansible.builtin.uri:
-        url: "https://{{ vast_endpoint }}/api/qospolicies/?name={{ item.qos_policy | urlencode }}"
+        url: "https://{{ _vast_vms_conn.host }}/api/qospolicies/?name={{ item.qos_policy | urlencode }}"
         method: GET
         headers:
           Authorization: "Bearer {{ _vast_qos_auth.json.access }}"
-        validate_certs: "{{ vast_storage_validate_certs }}"
-        timeout: "{{ vast_storage_api_timeout | int }}"
+        validate_certs: "{{ _vast_vms_conn.validate_certs }}"
+        timeout: "{{ _vast_vms_conn.timeout | int }}"
         status_code: [200]
       loop: "{{ _vast_qos_tiers }}"
       loop_control:
@@ -62,18 +59,18 @@
 
     - name: Create QoS policies that do not yet exist
       ansible.builtin.uri:
-        url: "https://{{ vast_endpoint }}/api/qospolicies/"
+        url: "https://{{ _vast_vms_conn.host }}/api/qospolicies/"
         method: POST
         body_format: json
         body: >-
           {{ {'name': item.item.qos_policy,
-              'tenant_id': _vast_tenant_result.tenants.id | int,
+              'tenant_id': _vast_tenant_id | int,
               'mode': 'STATIC'}
              | combine(item.item.qos_limits | default({})) }}
         headers:
           Authorization: "Bearer {{ _vast_qos_auth.json.access }}"
-        validate_certs: "{{ vast_storage_validate_certs }}"
-        timeout: "{{ vast_storage_api_timeout | int }}"
+        validate_certs: "{{ _vast_vms_conn.validate_certs }}"
+        timeout: "{{ _vast_vms_conn.timeout | int }}"
         status_code: [200, 201]
       loop: "{{ _vast_qos_check_results.results }}"
       loop_control:

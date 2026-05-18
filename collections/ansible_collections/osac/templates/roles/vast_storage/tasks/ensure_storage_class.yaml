@@ -75,6 +75,45 @@
     - name: Ensure VAST CSI Operator is installed
       ansible.builtin.include_tasks: ensure_csi_operator.yaml
 
+    # ── Ensure per-tier VMS resources exist (views, quotas, QoS, view policies) ──
+    # These are created here (not just in setup) so JIT tiers get their backing
+    # VMS resources. Uses admin creds for VMS API access.
+
+    - name: Resolve VAST admin credentials from env vars
+      ansible.builtin.include_tasks: read_credentials.yaml
+
+    - name: Build VMS connection from admin credentials
+      ansible.builtin.set_fact:
+        _vast_vms_conn:
+          host: "{{ vast_endpoint }}"
+          username: "{{ vast_username }}"
+          password: "{{ vast_password }}"
+          validate_certs: "{{ vast_storage_validate_certs }}"
+          timeout: "{{ vast_storage_api_timeout }}"
+      no_log: true
+
+    - name: Initialize view policy accumulators
+      ansible.builtin.set_fact:
+        _vast_view_policy_ids: {}
+        _vast_view_policy_names: {}
+
+    - name: Ensure per-protocol view policies exist
+      ansible.builtin.include_tasks: create_view_policy.yaml
+      loop: "{{ _vast_required_protocols }}"
+      loop_control:
+        loop_var: _vast_vp_protocol
+
+    - name: Ensure VAST views exist per tier
+      ansible.builtin.include_tasks: create_views.yaml
+
+    - name: Ensure per-tier QoS policies exist
+      ansible.builtin.include_tasks: create_qos_policy.yaml
+
+    - name: Ensure VAST quotas exist per tier
+      ansible.builtin.include_tasks: create_quotas.yaml
+
+    # ── K8s resources: CSI Secret, StorageClasses, VolumeSnapshotClasses ──
+
     - name: Set CSI Secret resource name
       ansible.builtin.set_fact:
         _vast_csi_secret_name: "vast-csi-{{ tenant_name }}"
@@ -266,17 +305,23 @@
     # Clear per-tenant credential facts (admin creds were never loaded)
     - name: Clear per-tenant credential facts from play scope
       ansible.builtin.set_fact:
+        vast_endpoint: ""
+        vast_username: ""
+        vast_password: ""
+        _vast_tenant_id: ""
         _vast_tenant_csi_username: ""
         _vast_tenant_csi_password: ""
         _vast_tenant_endpoint: ""
         _vast_tenant_vip_pool: ""
         _vast_tenant_config_secret: {}
+        _vast_vms_conn: {}
         _vast_block_encryption_passphrase: ""
         _vast_csi_secret_data: {}
         _vast_csi_secret_ref: {}
         _vast_view_policy_name: ""
         _vast_view_policy_names: {}
         _vast_view_policy_names_raw: ""
+        _vast_view_policy_ids: {}
         _vast_tenant_block_encryption_passphrase: ""
         _vast_sc_block_encryption_params: {}
         _vast_nfs_tiers: []

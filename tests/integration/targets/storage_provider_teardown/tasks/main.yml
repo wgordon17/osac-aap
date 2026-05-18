@@ -86,14 +86,12 @@
             vast_local_provider_id: "1"
             vip_pool_name: "osac-test-pool"
             vast_endpoint: "127.0.0.1:18443"
-            storage_tiers: '[{"name":"default","protocol":"nfs","provider":"vast","qos_policy":"test-qos"}]'
             storage_provider_type: "vast"
             tenant_manager_name: "osac-test-teardown"
             tenant_manager_username: "osac-test-teardown"
             tenant_manager_password: "test-csi-password"
             tenant_manager_id: "7"
             tenant_role_id: "8"
-            view_policy_name: "osac-test-teardown-nfs"
 
     - name: Create StorageClass fixture (setup-created)
       kubernetes.core.k8s:
