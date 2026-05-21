@@ -1,0 +1,22 @@
+---
+- name: Fail if host class is not openstack
+  ansible.builtin.fail:
+    msg: "bm_host_private_network requires hostClass 'openstack', got '{{ host_lease.spec.hostClass | default('') }}'"
+  when: host_lease.spec.hostClass | default('') != "openstack"
+
+- name: Fail if network class is not openstack
+  ansible.builtin.fail:
+    msg: "bm_host_private_network requires networkClass 'openstack', got '{{ host_lease.spec.networkClass | default('') }}'"
+  when: host_lease.spec.networkClass | default('') != "openstack"
+
+- name: Detach node from private network
+  ansible.builtin.include_role:
+    name: massopencloud.esi.l2
+    tasks_from: set_networks_for_node
+  vars:
+    node: "{{ host_lease.spec.externalHostID }}"
+    networks: []
+
+- name: Network detachment completed
+  ansible.builtin.debug:
+    msg: "Node {{ host_lease.spec.externalHostID }} detached from all private networks"

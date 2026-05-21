@@ -4,6 +4,11 @@
     msg: "bm_host_agent_provisioning requires hostClass 'openstack', got '{{ host_lease.spec.hostClass | default('') }}'"
   when: host_lease.spec.hostClass | default('') != "openstack"
 
+- name: Fail if network class is not openstack
+  ansible.builtin.fail:
+    msg: "bm_host_agent_provisioning requires networkClass 'openstack', got '{{ host_lease.spec.networkClass | default('') }}'"
+  when: host_lease.spec.networkClass | default('') != "openstack"
+
 - name: Parse template parameters
   ansible.builtin.set_fact:
     template_params: "{{ host_lease.spec.templateParameters | from_json }}"

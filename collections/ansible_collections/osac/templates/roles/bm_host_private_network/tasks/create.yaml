@@ -1,0 +1,31 @@
+---
+- name: Fail if host class is not openstack
+  ansible.builtin.fail:
+    msg: "bm_host_private_network requires hostClass 'openstack', got '{{ host_lease.spec.hostClass | default('') }}'"
+  when: host_lease.spec.hostClass | default('') != "openstack"
+
+- name: Fail if network class is not openstack
+  ansible.builtin.fail:
+    msg: "bm_host_private_network requires networkClass 'openstack', got '{{ host_lease.spec.networkClass | default('') }}'"
+  when: host_lease.spec.networkClass | default('') != "openstack"
+
+- name: Parse template parameters
+  ansible.builtin.set_fact:
+    template_params: "{{ host_lease.spec.templateParameters | from_json }}"
+
+- name: Fail if privateNetwork is missing
+  ansible.builtin.fail:
+    msg: "templateParameters.privateNetwork is required"
+  when: template_params.privateNetwork | default('') | length == 0
+
+- name: Attach node to private network
+  ansible.builtin.include_role:
+    name: massopencloud.esi.l2
+    tasks_from: set_networks_for_node
+  vars:
+    node: "{{ host_lease.spec.externalHostID }}"
+    networks: "{{ [template_params.privateNetwork] }}"
+
+- name: Network attachment completed
+  ansible.builtin.debug:
+    msg: "Node {{ host_lease.spec.externalHostID }} attached to network {{ template_params.privateNetwork }}"
