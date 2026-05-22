@@ -9,6 +9,10 @@
     msg: "bm_host_private_network requires networkClass 'openstack', got '{{ host_lease.spec.networkClass | default('') }}'"
   when: host_lease.spec.networkClass | default('') != "openstack"
 
+- name: Parse template parameters
+  ansible.builtin.set_fact:
+    template_params: "{{ host_lease.spec.templateParameters | default('{}') | from_json }}"
+
 - name: Detach node from private network
   ansible.builtin.include_role:
     name: massopencloud.esi.l2
@@ -17,6 +21,18 @@
     node: "{{ host_lease.spec.externalHostID }}"
     networks: []
 
+- name: Attach node to network after detach
+  ansible.builtin.include_role:
+    name: massopencloud.esi.l2
+    tasks_from: set_networks_for_node
+  vars:
+    node: "{{ host_lease.spec.externalHostID }}"
+    networks: "{{ [template_params.networkAfterDelete] }}"
+  when: template_params.networkAfterDelete is defined
+
 - name: Network detachment completed
   ansible.builtin.debug:
-    msg: "Node {{ host_lease.spec.externalHostID }} detached from all private networks"
+    msg: >-
+      Node {{ host_lease.spec.externalHostID }} detached from private network
+      {{ (template_params.networkAfterDelete is defined)
+         | ternary('and attached to ' ~ template_params.networkAfterDelete | default(''), '') }}
