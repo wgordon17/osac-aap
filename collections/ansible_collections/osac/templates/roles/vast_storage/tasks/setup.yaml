@@ -186,6 +186,7 @@
                 tenant_manager_password: "{{ _vast_tenant_manager_password }}"
                 tenant_manager_id: "{{ _vast_tenant_manager_id | default('') | string }}"
                 tenant_role_id: "{{ _vast_tenant_role_id | default('') | string }}"
+                tenant_realm_id: "{{ _vast_tenant_realm_id | default('') | string }}"
                 block_encryption_passphrase: "{{ storage_provider_block_encryption_passphrase | default('') }}"
           no_log: true
 
@@ -280,6 +281,7 @@
         _vast_tenant_manager_password: ""
         _vast_tenant_manager_id: ""
         _vast_tenant_role_id: ""
+        _vast_tenant_realm_id: ""
         _vast_local_provider_id: ""
       no_log: true
 
